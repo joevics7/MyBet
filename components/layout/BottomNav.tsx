@@ -2,13 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Brain, Award, BookOpen } from 'lucide-react';
+import { Home, Wrench, Archive, Sparkles } from 'lucide-react';
 
 const TABS = [
   { href: '/', label: 'Home', icon: Home, match: (p: string) => p === '/' },
-  { href: '/quizzes', label: 'Quizzes', icon: Brain, match: (p: string) => p.startsWith('/quizzes') },
-  { href: '/scholarships', label: 'Scholarships', icon: Award, match: (p: string) => p.startsWith('/scholarships') },
-  { href: '/blog', label: 'Guides', icon: BookOpen, match: (p: string) => p.startsWith('/blog') },
+  { href: '/tools', label: 'Tools', icon: Wrench, match: (p: string) => p.startsWith('/tools') && !p.startsWith('/tools/vault') },
+  { href: '/tools/vault', label: 'Vault', icon: Archive, match: (p: string) => p.startsWith('/tools/vault') },
+  { href: '/predictor', label: 'Predictor', icon: Sparkles, match: (p: string) => p.startsWith('/predictor') },
 ];
 
 export function BottomNav() {

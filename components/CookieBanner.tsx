@@ -27,7 +27,7 @@ declare global {
   }
 }
 
-const CONSENT_KEY = 'edubase_cookie_consent';
+const CONSENT_KEY = 'betmeter_cookie_consent';
 const CONSENT_VERSION = '1'; // bump this if you change cookie/consent practices
 
 type ConsentValue = 'accepted' | 'rejected';

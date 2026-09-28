@@ -2,30 +2,29 @@ import Link from 'next/link';
 
 const columns = [
   {
-    heading: 'Quizzes',
+    heading: 'Tools',
     links: [
-      { label: 'All quizzes', href: '/quizzes' },
-      { label: 'Exam prep quizzes', href: '/quizzes?category=exam-prep' },
+      { label: 'Booking code decoder', href: '/tools/decoder' },
+      { label: 'Booking code converter', href: '/tools/converter' },
+      { label: 'Bet splitter', href: '/tools/splitter' },
+      { label: 'Odds comparison', href: '/tools/odds-comparison' },
+      { label: 'Vault + result checker', href: '/tools/vault' },
+      { label: 'Stake calculator', href: '/tools/stake-calculator' },
     ],
   },
   {
-    heading: 'Scholarships',
+    heading: 'More',
     links: [
-      { label: 'Browse scholarships', href: '/scholarships' },
-      { label: 'Fully funded', href: '/scholarships/browse?funding=full' },
-      { label: 'Masters', href: '/scholarships/browse?level=masters' },
+      { label: 'Daily predictor', href: '/predictor' },
+      { label: 'All tools', href: '/tools' },
     ],
-  },
-  {
-    heading: 'Guides',
-    links: [{ label: 'All guides', href: '/blog' }],
   },
   {
     heading: 'Company',
     links: [
       { label: 'About', href: '/about' },
       { label: 'Contact', href: '/contact' },
-      { label: 'Editorial policy', href: '/about#editorial-policy' },
+      { label: 'FAQ', href: '/faq' },
     ],
   },
   {
@@ -43,10 +42,10 @@ export function Footer() {
     <footer className="border-t border-border bg-[hsl(var(--ink))] text-[hsl(var(--paper))]/90 mt-20">
       <div className="max-w-6xl mx-auto px-4 py-14 grid grid-cols-2 md:grid-cols-6 gap-8">
         <div className="col-span-2">
-          <p className="font-serif text-xl font-semibold text-[hsl(var(--paper))]">Edubase</p>
+          <p className="font-serif text-xl font-semibold text-[hsl(var(--paper))]">BetMeter</p>
           <p className="mt-3 text-sm text-[hsl(var(--paper))]/60 max-w-xs">
-            A verified scholarship tracker and education resource guide.
-            Every figure sourced, every scholarship linked to its official page.
+            Booking code tools with a confidence score on every selection — decode, convert,
+            split, compare, save, and size your stake.
           </p>
         </div>
         {columns.map((col) => (
@@ -68,7 +67,7 @@ export function Footer() {
       </div>
       <div className="border-t border-white/10">
         <p className="max-w-6xl mx-auto px-4 py-5 text-xs text-[hsl(var(--paper))]/50">
-          © {new Date().getFullYear()} Edubase. Educational information only — always confirm figures with the official source linked on each page.
+          © {new Date().getFullYear()} BetMeter. Statistical analysis, not a guarantee — always bet responsibly.
         </p>
       </div>
     </footer>

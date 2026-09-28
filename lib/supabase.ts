@@ -11,117 +11,98 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-export type Country = {
+// ---- Core domain types, mirroring supabase/migrations schema ----
+
+export type Platform = {
   id: string;
-  slug: string;
+  slug: string; // e.g. 'sportybet', 'bet9ja', '1xbet', 'betking'
   name: string;
-  flag_emoji: string | null;
-  region: string | null;
-  currency_code: string | null;
-  launch_phase: number;
-  is_live: boolean;
+  is_supported_decode: boolean;
+  is_supported_encode: boolean;
+  code_format_regex: string | null;
+  deep_link_template: string | null; // e.g. https://sportybet.com/ng/booking/{code}
+  affiliate_base_url: string | null;
   sort_order: number;
+  created_at: string;
 };
 
-export type Category = {
+export type DecodedSelection = {
   id: string;
-  slug: string;
-  name: string;
-  description: string | null;
-  icon: string | null;
+  decode_id: string;
+  platform_id: string;
+  external_event_id: string | null;
+  home_team: string;
+  away_team: string;
+  market: string;
+  odds: number;
+  kickoff_at: string | null;
+  is_locked: boolean; // game already started
+  created_at: string;
 };
 
-export type Tool = {
+export type Decode = {
   id: string;
-  slug: string;
-  title: string;
-  tagline: string | null;
-  country_id: string | null;
-  category_id: string | null;
-  language: string;
-  description_md: string | null;
-  how_it_works_md: string | null;
-  faq: { question: string; answer: string }[];
-  official_source_url: string | null;
-  official_source_name: string | null;
-  author_name: string | null;
-  reviewer_name: string | null;
-  status: 'draft' | 'published' | 'archived';
-  last_reviewed_at: string | null;
-  countries?: Country;
-  categories?: Category;
+  platform_id: string;
+  source_code: string;
+  status: 'ok' | 'invalid' | 'expired' | 'unsupported_platform';
+  raw_response: Record<string, unknown> | null;
+  created_at: string;
+  selections?: DecodedSelection[];
 };
 
-export type Scholarship = {
+export type ConfidenceScore = {
   id: string;
-  slug: string;
-  title: string;
-  summary: string | null;
-  country_id: string | null;
-  level: 'undergraduate' | 'masters' | 'phd' | 'postdoc' | 'any' | null;
-  funding_type: 'full' | 'partial' | 'tuition_only' | 'stipend_only' | null;
-  field: string | null;
-  benefits_md: string | null;
-  eligibility_md: string | null;
-  eligibility_source_url: string | null;
-  required_documents_md: string | null;
-  application_process_md: string | null;
-  official_apply_url: string | null;
-  deadline: string | null;
-  is_closed: boolean;
-  is_featured: boolean;
-  board_priority: number | null;
-  requirements_short: string | null;
-  amount_short: string | null;
-  status: 'draft' | 'published' | 'archived';
-  countries?: Country;
+  platform_id: string;
+  external_event_id: string;
+  market: string;
+  score: number; // 0-100
+  reason: string | null;
+  computed_at: string;
+  expires_at: string; // 24h cache window
 };
 
-export type BlogPost = {
+export type OddsQuote = {
   id: string;
-  slug: string;
-  title: string;
-  excerpt: string | null;
-  content_md: string | null;
-  country_id: string | null;
-  language: string;
-  author_name: string | null;
-  reviewer_name: string | null;
-  status: 'draft' | 'published' | 'archived';
-  published_at: string | null;
-  last_reviewed_at: string | null;
-  countries?: Country;
+  platform_id: string;
+  external_event_id: string;
+  market: string;
+  odds: number;
+  fetched_at: string;
+  expires_at: string; // 5-10 min cache window
 };
 
-export type QuizQuestion = {
-  question: string;
-  options: string[];
-  correct_index: number;
-  explanation?: string;
-};
-
-export type QuizCategory = {
+export type VaultEntry = {
   id: string;
-  slug: string;
-  name: string;
-  icon: string | null;
+  user_id: string;
+  platform_id: string;
+  code: string;
+  decode_id: string | null;
+  status: 'pending' | 'won' | 'lost' | 'void' | 'unable_to_check';
+  saved_at: string;
+  settled_at: string | null;
+  legs_total: number;
+  legs_correct: number | null;
 };
 
-export type Quiz = {
+export type UserSettings = {
+  user_id: string;
+  telegram_chat_id: string | null;
+  bankroll: number | null;
+  kelly_fraction: number; // 0.25 default (quarter Kelly)
+  notifications_muted: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Fixture = {
   id: string;
-  slug: string;
-  title: string;
-  description: string | null;
-  country_id: string | null;
-  quiz_category_id: string | null;
-  language: string;
-  questions: QuizQuestion[];
-  quiz_type: 'standard' | 'custom';
-  custom_component_key: string | null;
-  config: Record<string, unknown>;
-  status: 'draft' | 'published' | 'archived';
-  author_name: string | null;
-  play_count: number;
-  countries?: Country;
-  quiz_categories?: QuizCategory;
+  external_event_id: string;
+  home_team: string;
+  away_team: string;
+  competition: string | null;
+  kickoff_at: string;
+  status: 'scheduled' | 'live' | 'finished' | 'postponed' | 'abandoned';
+  home_score: number | null;
+  away_score: number | null;
+  updated_at: string;
 };

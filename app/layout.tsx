@@ -8,15 +8,15 @@ import { CookieBanner } from '@/components/CookieBanner';
 import { Toaster } from '@/components/ui/toaster';
 import { fraunces, inter, plexMono } from '@/lib/fonts';
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://edubase.com';
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://betmeter.com';
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: 'Edubase — Education Tools & Scholarship Tracker',
-    template: '%s | Edubase',
+    default: 'BetMeter — Smarter Booking Code Tools',
+    template: '%s | BetMeter',
   },
-  description: 'Country-specific educational tools, exam practice, and a verified scholarship tracker. Every tool sourced and explained. Every scholarship linked to its official page.',
+  description: 'Decode, convert, split, and check booking codes with a confidence score on every selection. Telegram bot + web tools for smarter betting slips.',
   themeColor: '#0F1B33',
   viewport: {
     width: 'device-width',
@@ -30,15 +30,15 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    siteName: 'Edubase',
-    title: 'Edubase — Education Tools & Scholarship Tracker',
-    description: 'Country-specific educational tools, exam practice, and a verified scholarship tracker.',
-    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'Edubase' }],
+    siteName: 'BetMeter',
+    title: 'BetMeter — Smarter Booking Code Tools',
+    description: 'Decode, convert, split, and check booking codes with a confidence score on every selection.',
+    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'BetMeter' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Edubase — Education Tools & Scholarship Tracker',
-    description: 'Country-specific educational tools, exam practice, and a verified scholarship tracker.',
+    title: 'BetMeter — Smarter Booking Code Tools',
+    description: 'Decode, convert, split, and check booking codes with a confidence score on every selection.',
     images: ['/og-image.png'],
   },
   robots: { index: true, follow: true },
@@ -67,8 +67,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             });
           `}
         </Script>
-        {/* GA4 / AdSense script tags go back here once new Edubase
-            property + AdSense account IDs are issued (Phase 5). */}
+        {/* GA4 script tag goes here once the property ID is issued.
+            No AdSense on this property — monetized via betting-platform
+            affiliate programs instead, per the product spec. */}
       </head>
       <body>
         <div className="min-h-screen flex flex-col pb-16 md:pb-0">

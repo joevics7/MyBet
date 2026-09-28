@@ -1,110 +1,83 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { ChevronRight, MessageCircle, Phone, Mail, Clock } from 'lucide-react';
+import { ChevronRight, Send, Mail, Clock } from 'lucide-react';
+
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://betmeter.com';
+const TELEGRAM_BOT_URL = process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL || 'https://t.me/betmeter_bot';
+const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'support@betmeter.com';
 
 export const metadata: Metadata = {
-  title: 'Contact Us — Naira Autos Customer Support',
-  description: 'Have issues with our import duty calculator, VIN checker, or auto loan tool? Get in touch with Naira Autos support via WhatsApp, Call, or Email.',
-  alternates: {
-    canonical: 'https://www.naira.autos/contact',
-  },
+  title: 'Contact BetMeter',
+  description: 'Report a bug, suggest a platform to support, or ask about a tool — reach BetMeter via Telegram or email.',
+  alternates: { canonical: `${siteUrl}/contact` },
   openGraph: {
-    title: 'Contact Naira Autos Support',
-    description: 'We are here to assist you. Connect directly via WhatsApp or reach our support email box.',
-    url: 'https://www.naira.autos/contact',
+    title: 'Contact BetMeter',
+    description: 'Report a bug, suggest a platform to support, or ask about a tool.',
+    url: `${siteUrl}/contact`,
     type: 'website',
   },
 };
 
 export default function ContactPage() {
   return (
-    <>
-      {/* Hero Section */}
-      <div className="bg-[#080C10] border-b border-white/10">
-        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 pt-10 pb-12">
-          <nav className="flex items-center gap-1.5 text-xs text-white/30 mb-8" aria-label="Breadcrumb">
-            <Link href="/" className="hover:text-white/60 transition-colors">Home</Link>
-            <ChevronRight className="h-3 w-3" />
-            <span className="text-white/50">Contact</span>
-          </nav>
+    <div className="max-w-6xl mx-auto px-4 py-14">
+      <nav className="flex items-center gap-1.5 text-xs text-muted-foreground mb-8 font-mono" aria-label="Breadcrumb">
+        <Link href="/" className="hover:text-[hsl(var(--verified))] transition-colors">Home</Link>
+        <ChevronRight className="h-3 w-3" />
+        <span>Contact</span>
+      </nav>
 
-          <div className="max-w-3xl">
-            <h1
-              className="font-black uppercase text-white leading-none tracking-tight mb-2"
-              style={{ fontFamily: "'Barlow Condensed', Impact, sans-serif", fontSize: 'clamp(32px, 5vw, 60px)' }}
-            >
-              Get In Touch
-            </h1>
-            <p className="text-white/80 text-sm leading-relaxed">
-              Encountered a bug? Want to suggest an automotive tool? Or looking to partner with us? Our communication channels are always open.
-            </p>
-          </div>
-        </div>
+      <div className="max-w-2xl mb-10">
+        <p className="text-xs uppercase tracking-[0.14em] font-mono text-[hsl(var(--verified))] mb-2">Contact</p>
+        <h1 className="font-serif text-3xl md:text-4xl font-semibold">Get in touch</h1>
+        <p className="mt-3 text-muted-foreground">
+          Found a bug in a tool, want a platform added, or have a partnership question? Reach us
+          below.
+        </p>
       </div>
 
-      {/* Main Section Layout */}
-      <div className="bg-background">
-        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-14">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            
-            {/* WhatsApp */}
-            <a
-              href="https://wa.me/2349032047288"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-start gap-4 p-5 bg-green-500/5 border border-green-500/20 rounded-2xl hover:bg-green-500/10 transition-colors group"
-            >
-              <div className="p-3 bg-green-500/10 rounded-xl group-hover:bg-green-500/20 transition-colors">
-                <MessageCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
-              </div>
-              <div>
-                <p className="font-bold text-foreground text-base">WhatsApp Support</p>
-                <p className="text-xs text-muted-foreground mt-1 mb-3">Fastest response times for tool inquiries and feedback.</p>
-                <span className="text-xs font-semibold text-green-600 dark:text-green-400">Chat Now &rarr;</span>
-              </div>
-            </a>
-
-            {/* Phone Call */}
-            <a
-              href="tel:09032047288"
-              className="flex items-start gap-4 p-5 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl hover:bg-emerald-500/10 transition-colors group"
-            >
-              <div className="p-3 bg-emerald-500/10 rounded-xl group-hover:bg-emerald-500/20 transition-colors">
-                <Phone className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
-              </div>
-              <div>
-                <p className="font-bold text-foreground text-base">Call Support</p>
-                <p className="text-xs text-muted-foreground mt-1 mb-3">Speak to an agent regarding complex system queries.</p>
-                <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">09032047288</span>
-              </div>
-            </a>
-
-            {/* Email */}
-            <a
-              href="mailto:help.nairaautos@gmail.com"
-              className="flex items-start gap-4 p-5 bg-muted/50 border border-border rounded-2xl hover:bg-muted transition-colors group"
-            >
-              <div className="p-3 bg-muted border border-border rounded-xl group-hover:bg-border transition-colors">
-                <Mail className="h-6 w-6 text-muted-foreground" />
-              </div>
-              <div>
-                <p className="font-bold text-foreground text-base">Email Desk</p>
-                <p className="text-xs text-muted-foreground mt-1 mb-3">For advertisements, formal suggestions, and partnership pitches.</p>
-                <span className="text-xs font-semibold text-foreground/80 break-all">help.nairaautos@gmail.com</span>
-              </div>
-            </a>
-
+      <div className="grid sm:grid-cols-2 gap-5 max-w-2xl">
+        <a
+          href={TELEGRAM_BOT_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-start gap-4 p-5 border border-border bg-card rounded-sm hover:border-[hsl(var(--seal))] transition-colors group"
+        >
+          <div className="p-3 bg-muted rounded-sm">
+            <Send className="h-5 w-5 text-[hsl(var(--seal))]" strokeWidth={1.75} />
           </div>
-
-          {/* Operational Hours Note */}
-          <div className="mt-12 flex items-center gap-3 p-4 border border-border bg-card/40 rounded-xl max-w-xl">
-            <Clock className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-            <p className="text-xs text-muted-foreground leading-normal">
-              <strong>Support Hours:</strong> Monday through Saturday, 8:00 AM – 6:00 PM (WAT). Technical bug reports via email are tracked 24/7.
+          <div>
+            <p className="font-serif font-semibold text-sm">Telegram</p>
+            <p className="text-xs text-muted-foreground mt-1 mb-2">
+              Fastest way to reach us — message the bot directly.
             </p>
+            <span className="text-xs font-semibold text-[hsl(var(--verified))]">Open chat &rarr;</span>
           </div>
-        </div>
+        </a>
+
+        <a
+          href={`mailto:${SUPPORT_EMAIL}`}
+          className="flex items-start gap-4 p-5 border border-border bg-card rounded-sm hover:border-[hsl(var(--seal))] transition-colors group"
+        >
+          <div className="p-3 bg-muted rounded-sm">
+            <Mail className="h-5 w-5 text-muted-foreground" strokeWidth={1.75} />
+          </div>
+          <div>
+            <p className="font-serif font-semibold text-sm">Email</p>
+            <p className="text-xs text-muted-foreground mt-1 mb-2">
+              For partnership pitches and formal suggestions.
+            </p>
+            <span className="text-xs font-semibold text-foreground/80 break-all">{SUPPORT_EMAIL}</span>
+          </div>
+        </a>
       </div>
-    </>
+
+      <div className="mt-10 flex items-center gap-3 p-4 border border-border bg-muted/40 rounded-sm max-w-xl">
+        <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+        <p className="text-xs text-muted-foreground leading-normal">
+          Bug reports and platform requests are tracked as they come in — response times vary by volume.
+        </p>
+      </div>
+    </div>
   );
 }
