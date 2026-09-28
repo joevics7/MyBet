@@ -1,0 +1,20 @@
+User-agent: *
+Disallow: /admin
+Disallow: /api/
+Disallow: /add-listing
+Disallow: /search
+Disallow: /profile
+Disallow: /saved
+Disallow: /requests
+Disallow: /store
+Disallow: /new-cars
+Disallow: /used-cars
+Disallow: /tokunbo-cars
+Disallow: /nigerian-used-cars
+Disallow: /distress-sales
+Disallow: /cheap-cars
+Disallow: /video-verified-cars
+Disallow: /car-dealers
+Disallow: /seller
+
+Sitemap: https://www.naira.autos/sitemap.xml
