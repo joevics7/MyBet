@@ -5,5 +5,8 @@ insert into platforms (slug, name, is_supported_decode, is_supported_encode, sor
   ('sportybet', 'SportyBet', true, false, 1),
   ('bet9ja', 'Bet9ja', true, false, 2),
   ('1xbet', '1xBet', false, false, 3),
-  ('betking', 'BetKing', false, false, 4)
+  ('betking', 'BetKing', false, false, 4),
+  ('nairabet', 'NairaBet', false, false, 5),
+  ('stake', 'Stake', false, false, 6),
+  ('betway', 'Betway', false, false, 7)
 on conflict (slug) do nothing;

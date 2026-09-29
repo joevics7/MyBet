@@ -10,24 +10,22 @@
 // account and is NOT this -- don't confuse the two.
 //
 // IMPORTANT: this endpoint sits behind Akamai Bot Manager (ak_bmsc/bm_sv
-// cookies were present on the captured request). A plain server-side
-// fetch has no guarantee of passing that check the way a real browser
-// does. Treat this as unverified until tested against the live route --
-// if it starts silently failing or timing out, that's almost certainly why.
+// cookies were present on the captured request). First production test
+// (2026-09-29, code 5T97DPM) came back "invalid" -- cause not yet
+// confirmed. Candidates: (a) Akamai blocking/challenging the server-side
+// request, (b) the pinned v_cache_version below going stale, (c) the test
+// code itself being wrong/expired. This version logs the raw response so
+// Vercel's function logs show which one it actually is on the next test.
 //
 // Also unlike SportyBet, this response does not appear to report
 // settlement (win/loss) for finished matches -- so Bet9ja saved codes in
 // the Vault will likely need the Fixture/Results Feed rather than being
 // able to re-poll this endpoint the way SportyBet's can.
-//
-// v_cache_version is pinned to the value captured on 2026-09-29. Bet9ja
-// may bump this with frontend releases; if decode starts failing outright,
-// re-capture a fresh value from the site first.
 
 import type { DecodeStatus, NormalizedSelection, DecodeResult } from './types';
 
 const BET9JA_BASE_URL = 'https://coupon.bet9ja.com/desktop/feapi/CouponAjax/GetBookABetCouponV2';
-const CACHE_VERSION = '1.328.0.248';
+const CACHE_VERSION = '1.328.0.248'; // captured 2026-09-29; may need refreshing
 
 export type Bet9jaDecodeStatus = DecodeStatus;
 export type Bet9jaDecodeResult = DecodeResult;
@@ -48,6 +46,14 @@ interface RawResponse {
     O: Record<string, RawOutcomeEntry>;
   };
 }
+
+const EMPTY_RESULT: Bet9jaDecodeResult = {
+  status: 'invalid',
+  shareCode: null,
+  selections: [],
+  totalOdds: null,
+  raw: null,
+};
 
 // Over/Under-style keys embed the line in the key itself, e.g.
 // "839196379$S_OU@2.5_O" -- extract it since it's not a separate field.
@@ -78,18 +84,43 @@ export async function decodeBet9jaCode(code: string): Promise<Bet9jaDecodeResult
       },
       signal: AbortSignal.timeout(8000),
     });
-  } catch {
-    return { status: 'invalid', shareCode: null, selections: [], totalOdds: null, raw: null };
+  } catch (err) {
+    console.error('[bet9ja decode] fetch threw:', code, err);
+    return EMPTY_RESULT;
   }
+
+  // Read as text first (not res.json() directly) so a non-JSON response --
+  // e.g. an Akamai challenge/interstitial HTML page -- doesn't crash the
+  // route with an unhandled parse error. It gets logged instead.
+  const bodyText = await res.text();
 
   if (!res.ok) {
-    return { status: 'invalid', shareCode: null, selections: [], totalOdds: null, raw: null };
+    console.error(
+      '[bet9ja decode] non-OK response:',
+      code,
+      'status=', res.status,
+      'content-type=', res.headers.get('content-type'),
+      'body(first 500 chars)=', bodyText.slice(0, 500),
+    );
+    return EMPTY_RESULT;
   }
 
-  const json = (await res.json()) as RawResponse;
+  let json: RawResponse;
+  try {
+    json = JSON.parse(bodyText);
+  } catch (err) {
+    console.error(
+      '[bet9ja decode] JSON parse failed -- likely an Akamai challenge page, not a real API response:',
+      code,
+      'content-type=', res.headers.get('content-type'),
+      'body(first 500 chars)=', bodyText.slice(0, 500),
+    );
+    return EMPTY_RESULT;
+  }
 
   if (json.R !== 'OK' || !json.D || !json.D.O || Object.keys(json.D.O).length === 0) {
-    return { status: 'invalid', shareCode: null, selections: [], totalOdds: null, raw: json };
+    console.error('[bet9ja decode] response parsed but not a valid coupon:', code, JSON.stringify(json).slice(0, 500));
+    return { ...EMPTY_RESULT, raw: json };
   }
 
   const selections: NormalizedSelection[] = Object.entries(json.D.O).map(([key, entry]) => {
