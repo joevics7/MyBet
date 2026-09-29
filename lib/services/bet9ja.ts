@@ -9,13 +9,15 @@
 // bet:" field (GetCouponDetailsV2) is for a bet already placed under an
 // account and is NOT this -- don't confuse the two.
 //
-// IMPORTANT: this endpoint sits behind Akamai Bot Manager (ak_bmsc/bm_sv
-// cookies were present on the captured request). First production test
-// (2026-09-29, code 5T97DPM) came back "invalid" -- cause not yet
-// confirmed. Candidates: (a) Akamai blocking/challenging the server-side
-// request, (b) the pinned v_cache_version below going stale, (c) the test
-// code itself being wrong/expired. This version logs the raw response so
-// Vercel's function logs show which one it actually is on the next test.
+// CONFIRMED (2026-09-29): a plain server-side request gets a straight 403
+// from Akamai's edge network (errors.edgesuite.net), not even a JS
+// challenge page. This is very likely IP-reputation based -- Vercel's
+// serverless IPs are well-known datacenter ranges that Akamai commonly
+// blocks outright, independent of headers. Sending a fuller browser-like
+// header set (sec-ch-ua, sec-fetch-*, etc.) below as a cheap first attempt,
+// but if this keeps 403ing, the real fix is routing through a residential
+// proxy or a headless-browser service -- both add cost and complexity, so
+// worth confirming this header change doesn't fix it before going there.
 //
 // Also unlike SportyBet, this response does not appear to report
 // settlement (win/loss) for finished matches -- so Bet9ja saved codes in
@@ -77,10 +79,17 @@ export async function decodeBet9jaCode(code: string): Promise<Bet9jaDecodeResult
       method: 'GET',
       headers: {
         Accept: 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         Origin: 'https://sports.bet9ja.com',
         Referer: 'https://sports.bet9ja.com/',
+        'sec-ch-ua': '"Chromium";v="120", "Google Chrome";v="120", "Not A(Brand";v="99"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-site',
       },
       signal: AbortSignal.timeout(8000),
     });
