@@ -12,7 +12,7 @@ export default function Page() {
     <ToolPageShell
       title="Booking Code Decoder + Confidence Score"
       tagline="Paste a code, see every selection scored for risk before you commit."
-      status="soon"
+      status="live"
       howItWorks={
         <p>
           Paste a booking code and the Decode Service resolves it into its games and markets.

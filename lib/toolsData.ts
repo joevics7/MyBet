@@ -18,7 +18,7 @@ export const TOOLS_CATALOG: ToolEntry[] = [
     shortTitle: 'Decoder',
     tagline: 'Paste a code, see every selection scored for risk before you commit.',
     href: '/tools/decoder',
-    status: 'soon',
+    status: 'live',
   },
   {
     slug: 'converter',
@@ -58,7 +58,7 @@ export const TOOLS_CATALOG: ToolEntry[] = [
     shortTitle: 'Stake Calculator',
     tagline: 'Confidence-driven fractional Kelly sizing, with hard guardrails.',
     href: '/tools/stake-calculator',
-    status: 'soon',
+    status: 'live',
   },
   {
     slug: 'predictor',
