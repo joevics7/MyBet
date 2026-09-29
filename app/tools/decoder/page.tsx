@@ -16,9 +16,9 @@ export default function Page() {
       howItWorks={
         <p>
           Paste a booking code and the Decode Service resolves it into its games and markets.
-          SportyBet is live now; more platforms are being added. The Confidence Engine (scoring
-          each selection 0-100) is still being built, so results currently show the decoded slip
-          without a risk score.
+          SportyBet and Bet9ja are live now; more platforms are being added. The Confidence
+          Engine (scoring each selection 0-100) is still being built, so results currently show
+          the decoded slip without a risk score.
         </p>
       }
       body={<DecoderForm />}

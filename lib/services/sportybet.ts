@@ -11,29 +11,13 @@
 // the Vault's result checker can re-poll this same endpoint instead of
 // requiring a separate results feed for SportyBet specifically.
 
+import type { DecodeStatus, NormalizedSelection, DecodeResult } from './types';
+
 const SPORTYBET_BASE_URL = 'https://www.sportybet.com/api/ng/orders/share';
 
-export type SportyBetDecodeStatus = 'ok' | 'invalid' | 'expired' | 'unsupported_platform';
-
-export interface NormalizedSelection {
-  externalEventId: string;
-  homeTeam: string;
-  awayTeam: string;
-  market: string;         // e.g. "1X2 - Draw"
-  odds: number;
-  kickoffAt: string | null; // ISO string
-  isLocked: boolean;
-  matchStatus: string | null; // platform's raw status string, e.g. "Ended"
-  isWinning: boolean | null;  // null until the platform reports a result
-}
-
-export interface SportyBetDecodeResult {
-  status: SportyBetDecodeStatus;
-  shareCode: string | null;
-  selections: NormalizedSelection[];
-  totalOdds: number | null;
-  raw: unknown;
-}
+export type SportyBetDecodeStatus = DecodeStatus;
+export type SportyBetDecodeResult = DecodeResult;
+export type { NormalizedSelection };
 
 // Raw shape of the fields we actually read from SportyBet's response.
 // Deliberately loose (not exhaustive) -- the real payload has many more

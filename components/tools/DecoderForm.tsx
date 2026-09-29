@@ -2,9 +2,12 @@
 
 import { useState } from 'react';
 import { Loader2, Search, CheckCircle2, XCircle, MinusCircle } from 'lucide-react';
-import type { SportyBetDecodeResult, NormalizedSelection } from '@/lib/services/sportybet';
+import type { DecodeResult, NormalizedSelection } from '@/lib/services/types';
 
-const PLATFORMS = [{ slug: 'sportybet', label: 'SportyBet' }];
+const PLATFORMS = [
+  { slug: 'sportybet', label: 'SportyBet' },
+  { slug: 'bet9ja', label: 'Bet9ja' },
+];
 
 function ResultIcon({ selection }: { selection: NormalizedSelection }) {
   if (selection.isWinning === true) {
@@ -20,7 +23,7 @@ export function DecoderForm() {
   const [platform, setPlatform] = useState(PLATFORMS[0].slug);
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<SportyBetDecodeResult | null>(null);
+  const [result, setResult] = useState<DecodeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -37,7 +40,7 @@ export function DecoderForm() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ platform, code: code.trim() }),
       });
-      const data: SportyBetDecodeResult = await res.json();
+      const data: DecodeResult = await res.json();
 
       if (data.status !== 'ok') {
         setError(

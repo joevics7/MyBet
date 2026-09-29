@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { decodeSportyBetCode } from '@/lib/services/sportybet';
+import { decodeBet9jaCode } from '@/lib/services/bet9ja';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
+import type { DecodeResult } from '@/lib/services/types';
 
 export const runtime = 'nodejs';
 
 // Platform decode services, keyed by platforms.slug. Add an entry here as
 // each platform's Decode Service ships.
-const DECODERS: Record<string, (code: string) => ReturnType<typeof decodeSportyBetCode>> = {
+const DECODERS: Record<string, (code: string) => Promise<DecodeResult>> = {
   sportybet: decodeSportyBetCode,
+  bet9ja: decodeBet9jaCode,
 };
 
 export async function POST(req: NextRequest) {
