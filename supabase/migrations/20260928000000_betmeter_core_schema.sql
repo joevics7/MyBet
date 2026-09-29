@@ -37,6 +37,8 @@ create table decoded_selections (
   odds numeric(10,2) not null,
   kickoff_at timestamptz,
   is_locked boolean not null default false,
+  match_status text,                      -- platform's own status string, e.g. 'Ended', 'Not started'
+  is_winning boolean,                     -- null until the platform reports a result for this leg
   created_at timestamptz not null default now()
 );
 
