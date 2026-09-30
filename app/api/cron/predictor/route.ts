@@ -30,8 +30,15 @@ const FIXTURE_WINDOW_DAYS = 2; // scan the next 2 days of fixtures each run
 // heavy multi-competition day there may be more scheduled fixtures than
 // this, and those simply aren't scanned that run rather than the job
 // failing outright. That's an accepted free-tier limitation, not a bug.
-const MAX_FIXTURES_PER_RUN = 25;
-const THROTTLE_MS = 300; // light spacing between fixtures to reduce 429 risk, not a hard guarantee
+//
+// Cut down from 25->12 and throttle 300ms->100ms after a 502 on first
+// live test: scanning many fixtures sequentially (2 API calls + a Gemini
+// call per selection that makes a ticket, each with its own network
+// round-trip) adds up fast in a single request/response cycle. Smaller
+// and faster first, can raise again once there's a stable baseline for
+// how long this actually takes end to end.
+const MAX_FIXTURES_PER_RUN = 12;
+const THROTTLE_MS = 100;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -48,6 +55,23 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  // Top-level safety net: every known failure mode inside is already
+  // caught individually (per-fixture, Gemini, Supabase), but this catches
+  // anything unexpected so a bug here returns a diagnosable JSON error
+  // instead of an opaque crash.
+  try {
+    return await runPredictorJob();
+  } catch (err) {
+    console.error('[predictor cron] unhandled error:', err);
+    return NextResponse.json(
+      { error: 'Unhandled error', message: err instanceof Error ? err.message : String(err) },
+      { status: 500 },
+    );
+  }
+}
+
+async function runPredictorJob(): Promise<NextResponse> {
+  const startedAt = Date.now();
   const dateFrom = new Date().toISOString().slice(0, 10);
   const dateTo = new Date(Date.now() + FIXTURE_WINDOW_DAYS * 86400000).toISOString().slice(0, 10);
 
@@ -113,8 +137,10 @@ export async function GET(req: NextRequest) {
     await sleep(THROTTLE_MS);
   }
 
+  const fixtureScanMs = Date.now() - startedAt;
   const tickets = generateDailyTickets(candidates);
 
+  const reasonsStartedAt = Date.now();
   // Now generate reasons -- only for the selections actually used.
   for (const ticket of tickets) {
     for (const sel of ticket.selections) {
@@ -181,12 +207,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Generated tickets but failed to save them', tickets }, { status: 500 });
   }
 
+  const reasonsMs = Date.now() - reasonsStartedAt;
+  const totalMs = Date.now() - startedAt;
+
   return NextResponse.json({
     ticketDate,
     fixturesScanned: scheduled.length,
     fixturesSkipped: skippedCount,
     candidatesEvaluated: candidates.length,
     ticketsGenerated: tickets.length,
+    timingMs: { fixtureScan: fixtureScanMs, reasonGeneration: reasonsMs, total: totalMs },
     tickets,
   });
 }
