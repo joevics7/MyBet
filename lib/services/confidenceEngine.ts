@@ -97,10 +97,33 @@ function pickProbability(
   return market.pick === 'over' ? line.over : line.under;
 }
 
-export async function computeConfidenceScore(input: ConfidenceScoreInput): Promise<ScoreOutcome> {
+export interface MatchProbabilitiesData {
+  probs: ReturnType<typeof deriveMarketProbabilities>;
+  homeFormString: string;
+  awayFormString: string;
+  homeGoalsAvg: number;
+  awayGoalsAvg: number;
+}
+
+export type MatchProbabilitiesOutcome =
+  | { status: 'ok'; data: MatchProbabilitiesData }
+  | { status: 'insufficient_data'; message: string };
+
+// Fetches each team's form ONCE and derives probabilities for every
+// requested market from a single Poisson matrix. Use this (not
+// computeConfidenceScore in a loop) whenever scoring multiple markets
+// for the same fixture -- e.g. the daily Predictor scanning 1X2/BTTS/O-U
+// per match -- so football-data.org's 10 req/min limit isn't burned
+// re-fetching the same team's form once per market.
+export async function computeMatchProbabilities(
+  homeTeamId: number,
+  awayTeamId: number,
+  overUnderLines: number[] = [1.5, 2.5, 3.5],
+  leagueAvg?: LeagueAverages,
+): Promise<MatchProbabilitiesOutcome> {
   const [homeForm, awayForm] = await Promise.all([
-    fetchTeamRecentForm(input.homeTeamId),
-    fetchTeamRecentForm(input.awayTeamId),
+    fetchTeamRecentForm(homeTeamId),
+    fetchTeamRecentForm(awayTeamId),
   ]);
 
   if (homeForm.length < MIN_SAMPLE_SIZE || awayForm.length < MIN_SAMPLE_SIZE) {
@@ -110,36 +133,65 @@ export async function computeConfidenceScore(input: ConfidenceScoreInput): Promi
     };
   }
 
-  const leagueAvg = input.leagueAvg;
   const homeStrength = computeTeamStrength(homeForm, leagueAvg);
   const awayStrength = computeTeamStrength(awayForm, leagueAvg);
   const { homeXg, awayXg } = expectedGoals(homeStrength, awayStrength, leagueAvg);
   const matrix = buildScorelineMatrix(homeXg, awayXg);
-  const probs = deriveMarketProbabilities(
-    matrix,
+
+  return {
+    status: 'ok',
+    data: {
+      probs: deriveMarketProbabilities(matrix, overUnderLines),
+      homeFormString: formString(homeForm),
+      awayFormString: formString(awayForm),
+      homeGoalsAvg: goalsAvg(homeForm),
+      awayGoalsAvg: goalsAvg(awayForm),
+    },
+  };
+}
+
+// Cheap, no I/O -- just picks and converts a probability already computed
+// by computeMatchProbabilities. No Gemini call here; callers that need a
+// reason (like the Predictor, only for selections that make a final
+// ticket) should call generateReason separately and only when needed.
+export function scoreForMarket(
+  market: MarketSelector,
+  probs: ReturnType<typeof deriveMarketProbabilities>,
+): { score: number; probability: number } | null {
+  const probability = pickProbability(market, probs);
+  if (probability === null) return null;
+  return { score: probabilityToScore(probability), probability };
+}
+
+export async function computeConfidenceScore(input: ConfidenceScoreInput): Promise<ScoreOutcome> {
+  const outcome = await computeMatchProbabilities(
+    input.homeTeamId,
+    input.awayTeamId,
     input.market.type === 'OVER_UNDER' ? [input.market.line] : undefined,
+    input.leagueAvg,
   );
 
-  const probability = pickProbability(input.market, probs);
-  if (probability === null) {
+  if (outcome.status === 'insufficient_data') return outcome;
+
+  const scored = scoreForMarket(input.market, outcome.data.probs);
+  if (!scored) {
     return { status: 'insufficient_data', message: `Market line not computed: ${marketLabel(input.market)}` };
   }
 
-  const score = probabilityToScore(probability);
   const reason = await generateReason({
     homeTeam: input.homeTeamName,
     awayTeam: input.awayTeamName,
     market: marketLabel(input.market),
-    score,
-    homeForm: formString(homeForm),
-    awayForm: formString(awayForm),
-    homeGoalsAvg: goalsAvg(homeForm),
-    awayGoalsAvg: goalsAvg(awayForm),
+    score: scored.score,
+    homeForm: outcome.data.homeFormString,
+    awayForm: outcome.data.awayFormString,
+    homeGoalsAvg: outcome.data.homeGoalsAvg,
+    awayGoalsAvg: outcome.data.awayGoalsAvg,
   });
 
   return {
     status: 'ok',
-    result: { score, probability, reason, computedAt: new Date().toISOString() },
+    result: { score: scored.score, probability: scored.probability, reason, computedAt: new Date().toISOString() },
   };
 }
 

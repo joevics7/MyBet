@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/predictor",
+      "schedule": "0 5 * * *"
+    }
+  ]
+}
