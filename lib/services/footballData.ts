@@ -67,9 +67,17 @@ export async function fetchUpcomingMatches(competitionCode: string, days = 2): P
 
 // Global endpoint across all subscribed (free-tier: 12) competitions,
 // rather than per-competition -- used for team-name matching, where we
-// don't yet know which competition a decoded selection belongs to.
+// don't yet know which competition a decoded selection belongs to, and
+// for the Predictor's daily fixture scan.
+//
+// Explicitly passing `competitions=` rather than relying on /v4/matches'
+// undocumented no-filter default -- first live test returned an empty
+// result set with no filter, which this should fix.
 export async function fetchMatchesByDateRange(dateFrom: string, dateTo: string): Promise<FdMatch[]> {
-  const data = await fdFetch<{ matches: FdMatch[] }>(`/matches?dateFrom=${dateFrom}&dateTo=${dateTo}`);
+  const competitions = FREE_TIER_COMPETITIONS.join(',');
+  const data = await fdFetch<{ matches: FdMatch[] }>(
+    `/matches?dateFrom=${dateFrom}&dateTo=${dateTo}&competitions=${competitions}`,
+  );
   return data.matches;
 }
 

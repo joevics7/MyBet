@@ -83,6 +83,12 @@ async function runPredictorJob(): Promise<NextResponse> {
     return NextResponse.json({ error: 'Failed to fetch fixtures' }, { status: 502 });
   }
 
+  const rawFixtureCount = fixtures.length;
+  const statusCounts = fixtures.reduce<Record<string, number>>((acc, f) => {
+    acc[f.status] = (acc[f.status] ?? 0) + 1;
+    return acc;
+  }, {});
+
   const scheduled = fixtures
     .filter((f) => f.status === 'SCHEDULED' || f.status === 'TIMED')
     .slice(0, MAX_FIXTURES_PER_RUN);
@@ -212,6 +218,8 @@ async function runPredictorJob(): Promise<NextResponse> {
 
   return NextResponse.json({
     ticketDate,
+    rawFixtureCount,
+    statusCounts,
     fixturesScanned: scheduled.length,
     fixturesSkipped: skippedCount,
     candidatesEvaluated: candidates.length,
