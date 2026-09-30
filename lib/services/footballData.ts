@@ -70,14 +70,15 @@ export async function fetchUpcomingMatches(competitionCode: string, days = 2): P
 // don't yet know which competition a decoded selection belongs to, and
 // for the Predictor's daily fixture scan.
 //
-// Explicitly passing `competitions=` rather than relying on /v4/matches'
-// undocumented no-filter default -- first live test returned an empty
-// result set with no filter, which this should fix.
+// No `competitions=` filter -- football-data.org's own docs confirm
+// /v4/matches with no filter already defaults to "today's matches of
+// your subscribed competitions" (dateFrom/dateTo still apply on top of
+// that). An earlier version of this function passed competitions=PL,CL,...
+// (string codes), which was wrong -- the API's own docs specify that
+// filter takes numeric competition IDs, not codes -- and produced an
+// empty result. Simpler to just omit it and rely on account scoping.
 export async function fetchMatchesByDateRange(dateFrom: string, dateTo: string): Promise<FdMatch[]> {
-  const competitions = FREE_TIER_COMPETITIONS.join(',');
-  const data = await fdFetch<{ matches: FdMatch[] }>(
-    `/matches?dateFrom=${dateFrom}&dateTo=${dateTo}&competitions=${competitions}`,
-  );
+  const data = await fdFetch<{ matches: FdMatch[] }>(`/matches?dateFrom=${dateFrom}&dateTo=${dateTo}`);
   return data.matches;
 }
 
