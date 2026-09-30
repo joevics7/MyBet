@@ -3,13 +3,21 @@
 // football-data.org for team form -> poissonModel.ts for the actual
 // probability math -> gemini.ts for the human-readable reason.
 //
-// NOT YET WIRED to the Decoder: matching a decoded selection's team
-// names (from SportyBet/Bet9ja) to football-data.org's team IDs is a
-// separate, unsolved problem (no shared ID between a betting platform
-// and a stats provider) -- this engine currently expects the caller to
-// already have resolved football-data.org team IDs.
+// Two entry points:
+// - computeConfidenceScoreFromNames(): the one a decoded selection should
+//   use. Resolves team names to a football-data.org fixture via
+//   teamMatcher.ts first, then scores it. Can return 'not_covered' when
+//   the fixture isn't in football-data.org's free-tier competitions --
+//   expected to be common, not an error.
+// - computeConfidenceScore(): lower-level, ID-based, used internally once
+//   teams are already resolved (or callable directly if a caller already
+//   has football-data.org team IDs from elsewhere).
+//
+// STILL NOT WIRED to the Decoder UI itself -- this module is ready to
+// call, but /tools/decoder doesn't call it yet.
 
 import { fetchTeamRecentForm } from './footballData';
+import { findFixtureByTeamNames, type MatchedFixture } from './teamMatcher';
 import {
   computeTeamStrength,
   expectedGoals,
@@ -43,9 +51,17 @@ export interface ConfidenceScoreResult {
   computedAt: string;
 }
 
-export type ConfidenceEngineResult =
+// ID-based outcome -- used internally once teams are already resolved.
+export type ScoreOutcome =
   | { status: 'ok'; result: ConfidenceScoreResult }
   | { status: 'insufficient_data'; message: string };
+
+// Name-based outcome -- the public entry point, used by callers (like a
+// decoded selection) that only have team names, not football-data.org IDs.
+export type ConfidenceEngineResult =
+  | { status: 'ok'; result: ConfidenceScoreResult; matchedFixture: MatchedFixture }
+  | { status: 'insufficient_data'; message: string }
+  | { status: 'not_covered'; message: string };
 
 function formString(matches: TeamMatchResult[]): string {
   // Most recent last, matching how form is conventionally displayed.
@@ -81,7 +97,7 @@ function pickProbability(
   return market.pick === 'over' ? line.over : line.under;
 }
 
-export async function computeConfidenceScore(input: ConfidenceScoreInput): Promise<ConfidenceEngineResult> {
+export async function computeConfidenceScore(input: ConfidenceScoreInput): Promise<ScoreOutcome> {
   const [homeForm, awayForm] = await Promise.all([
     fetchTeamRecentForm(input.homeTeamId),
     fetchTeamRecentForm(input.awayTeamId),
@@ -125,4 +141,42 @@ export async function computeConfidenceScore(input: ConfidenceScoreInput): Promi
     status: 'ok',
     result: { score, probability, reason, computedAt: new Date().toISOString() },
   };
+}
+
+export interface ConfidenceScoreFromNamesInput {
+  homeTeamName: string;
+  awayTeamName: string;
+  kickoffAt: string | null;
+  market: MarketSelector;
+  leagueAvg?: LeagueAverages;
+}
+
+// The entry point a decoded selection should actually call -- resolves
+// team names to a football-data.org fixture first (see teamMatcher.ts),
+// then scores it. Returns 'not_covered' (not an error) when the fixture
+// simply isn't in football-data.org's free-tier competitions, which is
+// expected to be common -- see teamMatcher.ts's top comment.
+export async function computeConfidenceScoreFromNames(
+  input: ConfidenceScoreFromNamesInput,
+): Promise<ConfidenceEngineResult> {
+  const fixture = await findFixtureByTeamNames(input.homeTeamName, input.awayTeamName, input.kickoffAt);
+
+  if (!fixture) {
+    return {
+      status: 'not_covered',
+      message: "No matching fixture found in football-data.org's free-tier competitions.",
+    };
+  }
+
+  const outcome = await computeConfidenceScore({
+    homeTeamId: fixture.homeTeamId,
+    awayTeamId: fixture.awayTeamId,
+    homeTeamName: fixture.homeTeamName,
+    awayTeamName: fixture.awayTeamName,
+    market: input.market,
+    leagueAvg: input.leagueAvg,
+  });
+
+  if (outcome.status === 'insufficient_data') return outcome;
+  return { status: 'ok', result: outcome.result, matchedFixture: fixture };
 }

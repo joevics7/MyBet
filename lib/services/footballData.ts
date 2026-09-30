@@ -65,6 +65,14 @@ export async function fetchUpcomingMatches(competitionCode: string, days = 2): P
   return data.matches;
 }
 
+// Global endpoint across all subscribed (free-tier: 12) competitions,
+// rather than per-competition -- used for team-name matching, where we
+// don't yet know which competition a decoded selection belongs to.
+export async function fetchMatchesByDateRange(dateFrom: string, dateTo: string): Promise<FdMatch[]> {
+  const data = await fdFetch<{ matches: FdMatch[] }>(`/matches?dateFrom=${dateFrom}&dateTo=${dateTo}`);
+  return data.matches;
+}
+
 // Recent finished matches for a team, used to compute attack/defense
 // strength. `limit` defaults to a reasonable form window -- more than
 // this starts including form that's no longer very predictive.
