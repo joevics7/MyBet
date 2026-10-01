@@ -64,6 +64,35 @@ interface RawShareResponse {
   };
 }
 
+export interface EncodeSelectionInput {
+  externalEventId: string; // SportyBet's eventId, e.g. "sr:match:74372516"
+  marketId: string;
+  outcomeId: string;
+  sportId: string; // e.g. "sr:sport:1"
+}
+
+export interface EncodeResult {
+  status: 'ok' | 'failed';
+  shareCode: string | null;
+}
+
+// STUB -- not yet implemented. We only ever captured the RESPONSE of
+// POST /api/ng/orders/share (used to create a new booking code), not its
+// request payload, so the actual shape to send is still unknown. The
+// response we did capture showed ticket.selections with fields
+// {eventId, marketId, outcomeId, parentBetBuilderMarketId, sportId,
+// estimateStartTime} -- but that's the response's echo of what was
+// created, not confirmed proof of the request body's required shape
+// (e.g. whether estimateStartTime must be sent by the client, or is
+// looked up server-side from eventId). Needs a real Payload-tab capture
+// before this can be written for real. Splitter calls this and handles
+// 'failed' gracefully (shows the grouped selections without a generated
+// code) rather than being blocked on it.
+export async function encodeSportyBetSlip(_selections: EncodeSelectionInput[]): Promise<EncodeResult> {
+  console.error('[sportybet encode] not yet implemented -- need the real request payload captured');
+  return { status: 'failed', shareCode: null };
+}
+
 export async function decodeSportyBetCode(code: string): Promise<SportyBetDecodeResult> {
   const url = `${SPORTYBET_BASE_URL}/${encodeURIComponent(code)}?_t=${Date.now()}`;
 

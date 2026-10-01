@@ -34,7 +34,7 @@ export const TOOLS_CATALOG: ToolEntry[] = [
     shortTitle: 'Splitter',
     tagline: 'Break a big ticket into risk-tiered slips, automatically or by hand.',
     href: '/tools/splitter',
-    status: 'soon',
+    status: 'live',
   },
   {
     slug: 'odds-comparison',
