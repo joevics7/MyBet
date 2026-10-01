@@ -13,6 +13,12 @@ export interface NormalizedSelection {
   isLocked: boolean;
   matchStatus: string | null;
   isWinning: boolean | null;
+  // Populated by /api/decode after decoding (not by the platform-specific
+  // decode services themselves, which don't know about the Confidence
+  // Engine). Undefined on services' own return values; number | null once
+  // the route has attempted scoring (null = not confidently scoreable,
+  // see parseMarketString).
+  score?: number | null;
 }
 
 export interface DecodeResult {

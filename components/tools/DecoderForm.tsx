@@ -19,6 +19,13 @@ function ResultIcon({ selection }: { selection: NormalizedSelection }) {
   return <MinusCircle className="h-4 w-4 text-muted-foreground flex-shrink-0" />;
 }
 
+function scoreColor(score: number | null | undefined): string {
+  if (score === null || score === undefined) return 'text-muted-foreground';
+  if (score >= 70) return 'text-[hsl(var(--verified))]';
+  if (score >= 40) return 'text-amber-600';
+  return 'text-[hsl(var(--rust))]';
+}
+
 export function DecoderForm() {
   const [platform, setPlatform] = useState(PLATFORMS[0].slug);
   const [code, setCode] = useState('');
@@ -103,6 +110,12 @@ export function DecoderForm() {
         </div>
       </form>
 
+      {loading && (
+        <p className="mt-3 text-xs text-muted-foreground">
+          Decoding and scoring each selection — this can take a few seconds.
+        </p>
+      )}
+
       {error && (
         <p className="mt-4 text-sm text-[hsl(var(--rust))] bg-[hsl(var(--rust))]/10 rounded-sm px-3 py-2">
           {error}
@@ -124,13 +137,18 @@ export function DecoderForm() {
                 <p className="text-xs text-muted-foreground truncate">{s.market}</p>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                <span className="text-xs font-mono">{s.odds.toFixed(2)}</span>
+                <span className={`text-xs font-mono font-semibold ${scoreColor(s.score)}`}>
+                  {s.score ?? '—'}
+                </span>
+                <span className="text-xs font-mono text-muted-foreground">{s.odds.toFixed(2)}</span>
                 <ResultIcon selection={s} />
               </div>
             </div>
           ))}
           <p className="text-[11px] text-muted-foreground pt-1">
-            Confidence scoring isn&rsquo;t live yet — this is a decoded read of the slip only.
+            Confidence score shown where available (0-100). &ldquo;—&rdquo; means this fixture
+            isn&rsquo;t covered by our data source yet (common for lower-division and
+            international matches) — not a 0.
           </p>
         </div>
       )}

@@ -3,8 +3,15 @@ import { decodeSportyBetCode } from '@/lib/services/sportybet';
 import { decodeBet9jaCode } from '@/lib/services/bet9ja';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import type { DecodeResult } from '@/lib/services/types';
+import { computeConfidenceScoreFromNames } from '@/lib/services/confidenceEngine';
+import { parseMarketString } from '@/lib/services/splitter';
 
 export const runtime = 'nodejs';
+export const maxDuration = 30; // now does real scoring work per selection, not just a quick decode
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 // Platform decode services, keyed by platforms.slug. Add an entry here as
 // each platform's Decode Service ships.
@@ -82,5 +89,36 @@ export async function POST(req: NextRequest) {
     // Supabase not configured yet, or the write failed -- non-fatal.
   }
 
-  return NextResponse.json(result);
+  if (result.status !== 'ok') {
+    return NextResponse.json(result);
+  }
+
+  // Score each selection -- same reasoning as the Splitter route: only
+  // score when the market can be confidently identified (parseMarketString
+  // returns null rather than guessing for anything unconfirmed), and
+  // throttle since football-data.org is 10 req/min.
+  const scoredSelections = [];
+  for (const sel of result.selections) {
+    let score: number | null = null;
+    const parsedMarket = parseMarketString(sel.market, sel.homeTeam, sel.awayTeam);
+
+    if (parsedMarket) {
+      try {
+        const outcome = await computeConfidenceScoreFromNames({
+          homeTeamName: sel.homeTeam,
+          awayTeamName: sel.awayTeam,
+          kickoffAt: sel.kickoffAt,
+          market: parsedMarket,
+        });
+        if (outcome.status === 'ok') score = outcome.result.score;
+      } catch (err) {
+        console.error('[decode] confidence scoring failed for selection:', sel.homeTeam, err);
+      }
+      await sleep(150);
+    }
+
+    scoredSelections.push({ ...sel, score });
+  }
+
+  return NextResponse.json({ ...result, selections: scoredSelections });
 }
