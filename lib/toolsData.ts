@@ -50,7 +50,7 @@ export const TOOLS_CATALOG: ToolEntry[] = [
     shortTitle: 'Vault',
     tagline: 'Save a code once — get a plain-language result when every leg settles.',
     href: '/tools/vault',
-    status: 'soon',
+    status: 'live',
   },
   {
     slug: 'stake-calculator',

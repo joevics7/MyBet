@@ -47,7 +47,11 @@ export async function POST(req: NextRequest) {
 
   // Persist best-effort. If Supabase isn't configured yet, or the write
   // fails, the caller still gets their decode result -- persistence is a
-  // cache, not the source of truth for this response.
+  // cache, not the source of truth for this response. decodeId/platformId
+  // are captured (not just fire-and-forget) so the Vault save flow can
+  // link a saved entry back to this specific decode.
+  let decodeId: string | null = null;
+  let platformId: string | null = null;
   try {
     const admin = getSupabaseAdmin();
 
@@ -56,11 +60,12 @@ export async function POST(req: NextRequest) {
       .select('id')
       .eq('slug', platform)
       .maybeSingle();
+    platformId = platformRow?.id ?? null;
 
     const { data: decodeRow, error: decodeError } = await admin
       .from('decodes')
       .insert({
-        platform_id: platformRow?.id ?? null,
+        platform_id: platformId,
         source_code: code,
         status: result.status,
         raw_response: result.raw ?? null,
@@ -68,22 +73,26 @@ export async function POST(req: NextRequest) {
       .select('id')
       .single();
 
-    if (!decodeError && decodeRow && result.selections.length > 0) {
-      await admin.from('decoded_selections').insert(
-        result.selections.map((s) => ({
-          decode_id: decodeRow.id,
-          platform_id: platformRow?.id ?? null,
-          external_event_id: s.externalEventId,
-          home_team: s.homeTeam,
-          away_team: s.awayTeam,
-          market: s.market,
-          odds: s.odds,
-          kickoff_at: s.kickoffAt,
-          is_locked: s.isLocked,
-          match_status: s.matchStatus,
-          is_winning: s.isWinning,
-        })),
-      );
+    if (!decodeError && decodeRow) {
+      decodeId = decodeRow.id;
+
+      if (result.selections.length > 0) {
+        await admin.from('decoded_selections').insert(
+          result.selections.map((s) => ({
+            decode_id: decodeRow.id,
+            platform_id: platformId,
+            external_event_id: s.externalEventId,
+            home_team: s.homeTeam,
+            away_team: s.awayTeam,
+            market: s.market,
+            odds: s.odds,
+            kickoff_at: s.kickoffAt,
+            is_locked: s.isLocked,
+            match_status: s.matchStatus,
+            is_winning: s.isWinning,
+          })),
+        );
+      }
     }
   } catch {
     // Supabase not configured yet, or the write failed -- non-fatal.
@@ -120,5 +129,5 @@ export async function POST(req: NextRequest) {
     scoredSelections.push({ ...sel, score });
   }
 
-  return NextResponse.json({ ...result, selections: scoredSelections });
+  return NextResponse.json({ ...result, selections: scoredSelections, decodeId, platformId });
 }
