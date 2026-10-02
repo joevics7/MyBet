@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { Loader2, Plus, RefreshCw, LogOut, CheckCircle2, XCircle, Clock, HelpCircle } from 'lucide-react';
+import { Loader2, Plus, RefreshCw, LogOut, CheckCircle2, XCircle, Clock, HelpCircle, Send } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { AuthForm } from '@/components/auth/AuthForm';
 
@@ -46,6 +46,10 @@ export function VaultManager() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [checkingId, setCheckingId] = useState<string | null>(null);
 
+  const [telegramLinked, setTelegramLinked] = useState<boolean | null>(null); // null = not checked yet
+  const [linkCode, setLinkCode] = useState<string | null>(null);
+  const [generatingLink, setGeneratingLink] = useState(false);
+
   useEffect(() => {
     if (!supabase) {
       setCheckingAuth(false);
@@ -72,9 +76,37 @@ export function VaultManager() {
     setLoadingEntries(false);
   }, [session]);
 
+  const checkTelegramLinked = useCallback(async () => {
+    if (!supabase || !session) return;
+    const { data } = await supabase
+      .from('user_settings')
+      .select('telegram_chat_id')
+      .eq('user_id', session.user.id)
+      .maybeSingle();
+    setTelegramLinked(!!data?.telegram_chat_id);
+  }, [session]);
+
   useEffect(() => {
-    if (session) loadEntries();
-  }, [session, loadEntries]);
+    if (session) {
+      loadEntries();
+      checkTelegramLinked();
+    }
+  }, [session, loadEntries, checkTelegramLinked]);
+
+  async function handleGenerateLinkCode() {
+    if (!session) return;
+    setGeneratingLink(true);
+    try {
+      const res = await fetch('/api/telegram/link', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const data = await res.json();
+      if (data.code) setLinkCode(data.code);
+    } finally {
+      setGeneratingLink(false);
+    }
+  }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -175,6 +207,49 @@ export function VaultManager() {
           <LogOut className="h-3.5 w-3.5" /> Sign out
         </button>
       </div>
+
+      {telegramLinked === false && (
+        <div className="rounded-sm border border-border bg-muted/40 p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <Send className="h-4 w-4 text-[hsl(var(--seal))]" />
+            <p className="text-sm font-medium">Get notified on Telegram when a code settles</p>
+          </div>
+          {linkCode ? (
+            <div className="mt-2">
+              <p className="text-xs text-muted-foreground">
+                Message{' '}
+                <a
+                  href={process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL || 'https://t.me/betmeter_bot'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[hsl(var(--verified))] underline"
+                >
+                  our Telegram bot
+                </a>{' '}
+                with:
+              </p>
+              <p className="mt-1 font-mono text-sm bg-background border border-border rounded-sm px-3 py-1.5 inline-block">
+                /link {linkCode}
+              </p>
+              <p className="mt-1 text-[11px] text-muted-foreground">Expires in 10 minutes.</p>
+            </div>
+          ) : (
+            <button
+              onClick={handleGenerateLinkCode}
+              disabled={generatingLink}
+              className="mt-2 text-xs font-semibold text-[hsl(var(--verified))] disabled:opacity-50"
+            >
+              {generatingLink ? 'Generating...' : 'Get a link code'}
+            </button>
+          )}
+        </div>
+      )}
+      {telegramLinked === true && (
+        <div className="rounded-sm border border-border bg-muted/40 p-4 flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 text-[hsl(var(--verified))]" />
+          <p className="text-sm">Telegram notifications are on for this account.</p>
+        </div>
+      )}
 
       <form onSubmit={handleSave} className="rounded-sm border border-border bg-card p-5 space-y-3">
         <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Save a code</p>

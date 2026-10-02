@@ -3,6 +3,7 @@ import { sendMessage, type TelegramUpdate } from '@/lib/services/telegram';
 import { decodeSportyBetCode } from '@/lib/services/sportybet';
 import { decodeBet9jaCode } from '@/lib/services/bet9ja';
 import type { DecodeResult } from '@/lib/services/types';
+import { getSupabaseAdmin } from '@/lib/supabase-admin';
 
 export const runtime = 'nodejs';
 export const maxDuration = 20;
@@ -24,8 +25,9 @@ const WELCOME_TEXT = `Welcome to BetMeter!
 Paste any SportyBet booking code and I'll decode it for you. Or use:
 /decode <code> -- decodes a SportyBet code
 /decode <platform> <code> -- e.g. /decode bet9ja 5T6TLPN
+/link <code> -- links this chat to your BetMeter account, so Vault notifications land here (get a code from the website's Vault page)
 
-More tools (confidence scores, splitting, vault) are on the way here -- for the full set, visit the website.`;
+More tools (confidence scores, splitting) are on the way here -- for the full set, visit the website.`;
 
 const BOOKING_CODE_PATTERN = /^[A-Z0-9]{5,10}$/i;
 
@@ -63,6 +65,49 @@ async function handleDecodeCommand(chatId: number, args: string[]) {
   await sendMessage(chatId, `${result.selections.length} selections:\n\n${lines.join('\n\n')}${totalOddsLine}`);
 }
 
+async function handleLinkCommand(chatId: number, args: string[]) {
+  const code = args[0]?.toUpperCase();
+  if (!code) {
+    await sendMessage(chatId, "Send it like this: /link ABC123 (get a code from the website's Vault page).");
+    return;
+  }
+
+  let admin;
+  try {
+    admin = getSupabaseAdmin();
+  } catch {
+    await sendMessage(chatId, "Linking isn't available right now -- try again later.");
+    return;
+  }
+
+  const { data: linkRow } = await admin
+    .from('telegram_link_codes')
+    .select('user_id, expires_at')
+    .eq('code', code)
+    .maybeSingle();
+
+  if (!linkRow || new Date(linkRow.expires_at).getTime() < Date.now()) {
+    await sendMessage(chatId, "That code is invalid or expired -- generate a new one on the website's Vault page.");
+    return;
+  }
+
+  // One link code is single-use -- delete it before anything else, so a
+  // retry or race can't link it twice.
+  await admin.from('telegram_link_codes').delete().eq('code', code);
+
+  const { error } = await admin
+    .from('user_settings')
+    .upsert({ user_id: linkRow.user_id, telegram_chat_id: String(chatId) }, { onConflict: 'user_id' });
+
+  if (error) {
+    console.error('[telegram webhook] link upsert failed:', error);
+    await sendMessage(chatId, 'Something went wrong linking your account -- try again.');
+    return;
+  }
+
+  await sendMessage(chatId, "Linked! I'll notify you here when your saved Vault codes settle.");
+}
+
 export async function POST(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -89,6 +134,9 @@ export async function POST(req: NextRequest) {
     } else if (text.startsWith('/decode')) {
       const args = text.split(/\s+/).slice(1);
       await handleDecodeCommand(chatId, args);
+    } else if (text.startsWith('/link')) {
+      const args = text.split(/\s+/).slice(1);
+      await handleLinkCommand(chatId, args);
     } else if (BOOKING_CODE_PATTERN.test(text)) {
       // Plain pasted code, no command -- assume SportyBet, the common case.
       await handleDecodeCommand(chatId, [text]);
