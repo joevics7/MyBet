@@ -78,28 +78,16 @@ export interface EncodeResult {
   shareCode: string | null;
 }
 
-// BEST-EFFORT, UNCONFIRMED -- we still only have the RESPONSE of
-// POST /api/ng/orders/share captured, never the actual request Payload,
-// despite two attempts. This implementation is inferred from indirect
-// evidence, not confirmed:
-//
-// The response's ticket.selections echoes {eventId, marketId, outcomeId,
-// parentBetBuilderMarketId, sportId, estimateStartTime}, but a byte-count
-// check rules out the client sending all of that: the captured request's
-// content-length was 425 bytes for 5 selections (one with a specifier).
-// A payload including every echoed field would run 700+ bytes for that
-// same request -- so parentBetBuilderMarketId, sportId, and
-// estimateStartTime are almost certainly server-derived/enriched for the
-// response only, not sent by the client. A minimal payload (just eventId,
-// marketId, outcomeId, and specifier when present) comes out close to
-// 425 bytes for that same request, which is the shape implemented below.
-//
-// TREAT AS UNVERIFIED until tested against the real API. If it fails,
-// the most likely next things to check (in order): (1) whether the body
-// needs a {"selections": [...]} wrapper vs. {"ticket": {"selections":
-// [...]}}, (2) whether marketId/outcomeId need to be numbers, not
-// strings, (3) whether specifier is required to be omitted (not just
-// undefined) when absent, rather than sent as null.
+// CONFIRMED (2026-10-03) against a real captured Payload tab. Real
+// request body for 5 selections:
+//   {"selections":[{"eventId":"sr:match:73220780","marketId":"1",
+//     "specifier":null,"outcomeId":"3"}, ...]}
+// Confirms the earlier byte-count inference was right: none of
+// parentBetBuilderMarketId/sportId/estimateStartTime (which the
+// response echoes back) are sent by the client -- those are
+// server-derived/enriched for the response only. The one correction
+// from the original inferred version: specifier is always present as a
+// key, explicitly null when there's no line -- not omitted.
 export async function encodeSportyBetSlip(selections: EncodeSelectionInput[]): Promise<EncodeResult> {
   if (selections.length === 0) return { status: 'failed', shareCode: null };
 
@@ -107,8 +95,8 @@ export async function encodeSportyBetSlip(selections: EncodeSelectionInput[]): P
     selections: selections.map((s) => ({
       eventId: s.externalEventId,
       marketId: s.marketId,
+      specifier: s.specifier ?? null,
       outcomeId: s.outcomeId,
-      ...(s.specifier ? { specifier: s.specifier } : {}),
     })),
   };
 
