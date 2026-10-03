@@ -32,6 +32,7 @@ interface RawOutcomeOption {
 interface RawMarket {
   id: string;
   desc: string;
+  specifier?: string; // e.g. "total=2.5" for Over/Under -- needed to re-encode this market
   outcomes: RawOutcomeOption[];
 }
 
@@ -48,6 +49,7 @@ interface RawSelection {
   eventId: string;
   marketId: string;
   outcomeId: string;
+  sportId?: string;
 }
 
 interface RawShareResponse {
@@ -68,7 +70,7 @@ export interface EncodeSelectionInput {
   externalEventId: string; // SportyBet's eventId, e.g. "sr:match:74372516"
   marketId: string;
   outcomeId: string;
-  sportId: string; // e.g. "sr:sport:1"
+  specifier?: string; // e.g. "total=2.5" for Over/Under -- omit for markets without a line
 }
 
 export interface EncodeResult {
@@ -76,21 +78,82 @@ export interface EncodeResult {
   shareCode: string | null;
 }
 
-// STUB -- not yet implemented. We only ever captured the RESPONSE of
-// POST /api/ng/orders/share (used to create a new booking code), not its
-// request payload, so the actual shape to send is still unknown. The
-// response we did capture showed ticket.selections with fields
-// {eventId, marketId, outcomeId, parentBetBuilderMarketId, sportId,
-// estimateStartTime} -- but that's the response's echo of what was
-// created, not confirmed proof of the request body's required shape
-// (e.g. whether estimateStartTime must be sent by the client, or is
-// looked up server-side from eventId). Needs a real Payload-tab capture
-// before this can be written for real. Splitter calls this and handles
-// 'failed' gracefully (shows the grouped selections without a generated
-// code) rather than being blocked on it.
-export async function encodeSportyBetSlip(_selections: EncodeSelectionInput[]): Promise<EncodeResult> {
-  console.error('[sportybet encode] not yet implemented -- need the real request payload captured');
-  return { status: 'failed', shareCode: null };
+// BEST-EFFORT, UNCONFIRMED -- we still only have the RESPONSE of
+// POST /api/ng/orders/share captured, never the actual request Payload,
+// despite two attempts. This implementation is inferred from indirect
+// evidence, not confirmed:
+//
+// The response's ticket.selections echoes {eventId, marketId, outcomeId,
+// parentBetBuilderMarketId, sportId, estimateStartTime}, but a byte-count
+// check rules out the client sending all of that: the captured request's
+// content-length was 425 bytes for 5 selections (one with a specifier).
+// A payload including every echoed field would run 700+ bytes for that
+// same request -- so parentBetBuilderMarketId, sportId, and
+// estimateStartTime are almost certainly server-derived/enriched for the
+// response only, not sent by the client. A minimal payload (just eventId,
+// marketId, outcomeId, and specifier when present) comes out close to
+// 425 bytes for that same request, which is the shape implemented below.
+//
+// TREAT AS UNVERIFIED until tested against the real API. If it fails,
+// the most likely next things to check (in order): (1) whether the body
+// needs a {"selections": [...]} wrapper vs. {"ticket": {"selections":
+// [...]}}, (2) whether marketId/outcomeId need to be numbers, not
+// strings, (3) whether specifier is required to be omitted (not just
+// undefined) when absent, rather than sent as null.
+export async function encodeSportyBetSlip(selections: EncodeSelectionInput[]): Promise<EncodeResult> {
+  if (selections.length === 0) return { status: 'failed', shareCode: null };
+
+  const body = {
+    selections: selections.map((s) => ({
+      eventId: s.externalEventId,
+      marketId: s.marketId,
+      outcomeId: s.outcomeId,
+      ...(s.specifier ? { specifier: s.specifier } : {}),
+    })),
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(SPORTYBET_BASE_URL, {
+      method: 'POST',
+      headers: {
+        Accept: '*/*',
+        'Content-Type': 'application/json;charset=UTF-8',
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Origin: 'https://www.sportybet.com',
+        Referer: 'https://www.sportybet.com/ng/',
+        clientid: 'web',
+        platform: 'web',
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch (err) {
+    console.error('[sportybet encode] fetch threw:', err);
+    return { status: 'failed', shareCode: null };
+  }
+
+  const bodyText = await res.text();
+  if (!res.ok) {
+    console.error('[sportybet encode] non-OK response:', res.status, bodyText.slice(0, 500));
+    return { status: 'failed', shareCode: null };
+  }
+
+  let json: RawShareResponse;
+  try {
+    json = JSON.parse(bodyText);
+  } catch {
+    console.error('[sportybet encode] response was not valid JSON:', bodyText.slice(0, 500));
+    return { status: 'failed', shareCode: null };
+  }
+
+  if (json.bizCode !== 10000 || !json.data?.shareCode) {
+    console.error('[sportybet encode] response did not include a shareCode:', JSON.stringify(json).slice(0, 500));
+    return { status: 'failed', shareCode: null };
+  }
+
+  return { status: 'ok', shareCode: json.data.shareCode };
 }
 
 export async function decodeSportyBetCode(code: string): Promise<SportyBetDecodeResult> {
@@ -156,6 +219,10 @@ export async function decodeSportyBetCode(code: string): Promise<SportyBetDecode
         isLocked,
         matchStatus: event.matchStatus ?? null,
         isWinning: typeof outcome.isWinning === 'number' ? outcome.isWinning === 1 : null,
+        rawMarketId: market.id,
+        rawOutcomeId: outcome.id,
+        rawSportId: sel.sportId ?? 'sr:sport:1', // football is the only sport decoded so far; fall back sensibly
+        rawSpecifier: market.specifier,
       } as NormalizedSelection;
     })
     .filter((s): s is NormalizedSelection => s !== null);

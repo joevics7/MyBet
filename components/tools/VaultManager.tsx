@@ -219,7 +219,7 @@ export function VaultManager() {
               <p className="text-xs text-muted-foreground">
                 Message{' '}
                 <a
-                  href={process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL || 'https://t.me/betmeter_bot'}
+                  href={process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL || 'https://t.me/BetsMeterBot'}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-[hsl(var(--verified))] underline"

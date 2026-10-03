@@ -3,7 +3,7 @@ import { Metadata } from 'next';
 import { ArrowRight, ShieldCheck, Gauge, Send, Layers } from 'lucide-react';
 import { TOOLS_CATALOG } from '@/lib/toolsData';
 
-const TELEGRAM_BOT_URL = process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL || 'https://t.me/betmeter_bot';
+const TELEGRAM_BOT_URL = process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL || 'https://t.me/BetsMeterBot';
 
 export const metadata: Metadata = {
   title: 'BetMeter — Smarter Booking Code Tools',

@@ -11,6 +11,11 @@ export interface SplittableSelection {
   market: string;
   odds: number;
   score: number | null; // null when the Confidence Engine couldn't cover this fixture
+  // Raw platform fields, carried through so a split group can actually be
+  // re-encoded into a new booking code -- see NormalizedSelection in types.ts.
+  rawMarketId?: string;
+  rawOutcomeId?: string;
+  rawSpecifier?: string;
 }
 
 export interface SplitGroup {

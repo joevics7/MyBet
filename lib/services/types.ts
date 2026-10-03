@@ -19,6 +19,15 @@ export interface NormalizedSelection {
   // the route has attempted scoring (null = not confidently scoreable,
   // see parseMarketString).
   score?: number | null;
+
+  // Raw platform-specific identifiers, needed to re-encode this selection
+  // into a new booking code (the display-friendly `market` string alone
+  // isn't enough). Optional/undefined for platforms or selections where
+  // these aren't available or encode isn't supported.
+  rawMarketId?: string;
+  rawOutcomeId?: string;
+  rawSportId?: string;
+  rawSpecifier?: string; // e.g. "total=2.5" for Over/Under markets
 }
 
 export interface DecodeResult {

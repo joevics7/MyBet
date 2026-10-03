@@ -70,23 +70,32 @@ export async function POST(req: NextRequest) {
       market: sel.market,
       odds: sel.odds,
       score,
+      rawMarketId: sel.rawMarketId,
+      rawOutcomeId: sel.rawOutcomeId,
+      rawSpecifier: sel.rawSpecifier,
     });
   }
 
   const groups = splitSelections(scored, body.mode, body.groupCount ?? 2);
 
   // Attempt to generate a real sub-code for each group. encodeSportyBetSlip
-  // is currently a stub (see sportybet.ts) -- every group will come back
-  // with generatedCode: null until that's implemented, but the grouping
-  // itself is fully functional and shown regardless.
+  // is implemented against an inferred (unconfirmed) payload shape -- see
+  // its top comment in sportybet.ts. A selection missing its raw fields
+  // (shouldn't happen for SportyBet decodes, but defensive) is skipped
+  // from the encode call entirely rather than sent with blank/wrong IDs.
   const groupsWithCodes = await Promise.all(
     groups.map(async (group) => {
+      const encodable = group.selections.filter((s) => s.rawMarketId && s.rawOutcomeId);
+      if (encodable.length !== group.selections.length) {
+        return { ...group, generatedCode: null };
+      }
+
       const encodeResult = await encodeSportyBetSlip(
-        group.selections.map((s) => ({
+        encodable.map((s) => ({
           externalEventId: s.externalEventId,
-          marketId: '', // not retained on decoded selections currently -- would need threading through if encode is implemented
-          outcomeId: '',
-          sportId: '',
+          marketId: s.rawMarketId!,
+          outcomeId: s.rawOutcomeId!,
+          specifier: s.rawSpecifier,
         })),
       );
       return { ...group, generatedCode: encodeResult.shareCode };
