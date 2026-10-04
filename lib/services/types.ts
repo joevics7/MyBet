@@ -18,7 +18,15 @@ export interface NormalizedSelection {
   // Engine). Undefined on services' own return values; number | null once
   // the route has attempted scoring (null = not confidently scoreable,
   // see parseMarketString).
+  //
+  // Two INDEPENDENT scores, shown side by side, never combined into one
+  // number: `score` is our own Poisson model ("BetMeter Score" in the
+  // UI); `tipsterScore` is the external prediction-site consensus
+  // ("Tipster Score"), averaged across whatever sites matched (see
+  // tipsterConsensus.ts). Either can be present without the other.
   score?: number | null;
+  tipsterScore?: number | null;
+  tipsterSources?: string[];
 
   // Raw platform-specific identifiers, needed to re-encode this selection
   // into a new booking code (the display-friendly `market` string alone

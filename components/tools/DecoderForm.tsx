@@ -129,26 +129,45 @@ export function DecoderForm() {
             {result.totalOdds && <span>Total odds: {result.totalOdds}</span>}
           </div>
           {result.selections.map((s, i) => (
-            <div key={i} className="flex items-center justify-between gap-3 rounded-sm border border-border px-3.5 py-2.5">
-              <div className="min-w-0">
-                <p className="text-sm truncate">
-                  {s.homeTeam} v {s.awayTeam}
-                </p>
-                <p className="text-xs text-muted-foreground truncate">{s.market}</p>
+            <div key={i} className="rounded-sm border border-border px-3.5 py-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm truncate">
+                    {s.homeTeam} v {s.awayTeam}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">{s.market}</p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className="text-xs font-mono text-muted-foreground">{s.odds.toFixed(2)}</span>
+                  <ResultIcon selection={s} />
+                </div>
               </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <span className={`text-xs font-mono font-semibold ${scoreColor(s.score)}`}>
-                  {s.score ?? '—'}
-                </span>
-                <span className="text-xs font-mono text-muted-foreground">{s.odds.toFixed(2)}</span>
-                <ResultIcon selection={s} />
+
+              <div className="mt-2 pt-2 border-t border-border/60 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">BetMeter Score</span>
+                  <span className={`text-xs font-mono font-semibold ${scoreColor(s.score)}`}>
+                    {s.score ?? '—'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">
+                    Tipster Score
+                    {s.tipsterSources && s.tipsterSources.length > 0 && (
+                      <span className="text-muted-foreground/70"> ({s.tipsterSources.join(', ')})</span>
+                    )}
+                  </span>
+                  <span className={`text-xs font-mono font-semibold ${scoreColor(s.tipsterScore)}`}>
+                    {s.tipsterScore ?? '—'}
+                  </span>
+                </div>
               </div>
             </div>
           ))}
           <p className="text-[11px] text-muted-foreground pt-1">
-            Confidence score shown where available (0-100). &ldquo;—&rdquo; means this fixture
-            isn&rsquo;t covered by our data source yet (common for lower-division and
-            international matches) — not a 0.
+            Two independent scores (0-100), never combined: BetMeter Score is our own model;
+            Tipster Score is an average of outside prediction sites. &ldquo;—&rdquo; means that
+            source doesn&rsquo;t cover this fixture — not a 0.
           </p>
         </div>
       )}

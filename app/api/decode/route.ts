@@ -4,6 +4,7 @@ import { decodeBet9jaCode } from '@/lib/services/bet9ja';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import type { DecodeResult } from '@/lib/services/types';
 import { computeConfidenceScoreFromNames } from '@/lib/services/confidenceEngine';
+import { computeTipsterConsensus } from '@/lib/services/tipsterConsensus';
 import { parseMarketString } from '@/lib/services/splitter';
 
 export const runtime = 'nodejs';
@@ -102,31 +103,48 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result);
   }
 
-  // Score each selection -- same reasoning as the Splitter route: only
-  // score when the market can be confidently identified (parseMarketString
-  // returns null rather than guessing for anything unconfirmed), and
-  // throttle since football-data.org is 10 req/min.
+  // Score each selection with TWO independent scores, never combined:
+  // `score` (BetMeter Score, our own Poisson model) and `tipsterScore`
+  // (Tipster Score, averaged external prediction-site consensus -- see
+  // tipsterConsensus.ts). Run concurrently per selection since they hit
+  // different data sources; only score when the market can be confidently
+  // identified (parseMarketString returns null rather than guessing for
+  // anything unconfirmed). Throttled since football-data.org is 10 req/min.
   const scoredSelections = [];
   for (const sel of result.selections) {
     let score: number | null = null;
+    let tipsterScore: number | null = null;
+    let tipsterSources: string[] = [];
     const parsedMarket = parseMarketString(sel.market, sel.homeTeam, sel.awayTeam);
 
     if (parsedMarket) {
-      try {
-        const outcome = await computeConfidenceScoreFromNames({
+      const [ownOutcome, tipsterOutcome] = await Promise.allSettled([
+        computeConfidenceScoreFromNames({
           homeTeamName: sel.homeTeam,
           awayTeamName: sel.awayTeam,
           kickoffAt: sel.kickoffAt,
           market: parsedMarket,
-        });
-        if (outcome.status === 'ok') score = outcome.result.score;
-      } catch (err) {
-        console.error('[decode] confidence scoring failed for selection:', sel.homeTeam, err);
+        }),
+        computeTipsterConsensus(sel.homeTeam, sel.awayTeam, sel.kickoffAt, parsedMarket),
+      ]);
+
+      if (ownOutcome.status === 'fulfilled' && ownOutcome.value.status === 'ok') {
+        score = ownOutcome.value.result.score;
+      } else if (ownOutcome.status === 'rejected') {
+        console.error('[decode] BetMeter Score failed for selection:', sel.homeTeam, ownOutcome.reason);
       }
+
+      if (tipsterOutcome.status === 'fulfilled') {
+        tipsterScore = tipsterOutcome.value.score;
+        tipsterSources = tipsterOutcome.value.sources;
+      } else {
+        console.error('[decode] Tipster Score failed for selection:', sel.homeTeam, tipsterOutcome.reason);
+      }
+
       await sleep(150);
     }
 
-    scoredSelections.push({ ...sel, score });
+    scoredSelections.push({ ...sel, score, tipsterScore, tipsterSources });
   }
 
   return NextResponse.json({ ...result, selections: scoredSelections, decodeId, platformId });
