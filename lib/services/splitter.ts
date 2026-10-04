@@ -25,21 +25,30 @@ export interface SplitGroup {
 
 export type SplitMode = 'risk' | 'even' | 'market';
 
-// Parses a decoded selection's free-text market label (e.g. "1X2 - Draw",
-// "Over 2.5") back into a MarketSelector the Confidence Engine can score.
-// IMPORTANT: only confirmed against real captured SportyBet data for the
-// "1X2 - Draw" case (see sportybet.ts's decode service and the real
-// example in this project's history) -- we have NOT yet captured a real
-// Home/Away, BTTS, or Over/Under selection from SportyBet to confirm its
-// exact outcome.desc wording for those. Returns null (safe) rather than
-// guessing for anything not confirmed -- an ungraded selection in the
-// Splitter is honest; a wrongly-scored one isn't.
+// Parses a decoded selection's free-text market label back into a
+// MarketSelector the Confidence Engine can score. Confirmed against real
+// decoded selections for: "1X2 - Draw", "1X2 - 2UP - Home" (the 2UP
+// suffix doesn't break the home/away suffix match), "GG/NG - Yes"
+// (Nigerian-bookmaker BTTS shorthand). Compound markets ("1X2 & GG/NG -
+// Home & yes") are deliberately rejected (see the ' & ' guard below), not
+// guessed at. Returns null (safe) for anything not confidently
+// identified -- an ungraded selection is honest; a wrongly-scored one isn't.
 export function parseMarketString(
   market: string,
   homeTeam: string,
   awayTeam: string,
 ): { type: '1X2'; pick: 'home' | 'draw' | 'away' } | { type: 'OVER_UNDER'; pick: 'over' | 'under'; line: number } | { type: 'BTTS'; pick: 'yes' | 'no' } | null {
   const lower = market.toLowerCase();
+
+  // Compound/combined markets (e.g. "1X2 & GG/NG - Home & yes") combine
+  // two conditions into one selection. Neither score can currently
+  // compute a joint probability for that (would need a dedicated
+  // calculation, not just picking one of the two keywords found in the
+  // string) -- MUST be checked first, before any individual-market
+  // keyword check below, or a compound market could match on just one
+  // half (e.g. "gg/ng" inside it) and silently drop the other condition,
+  // producing a score for the wrong thing.
+  if (lower.includes(' & ')) return null;
 
   if (lower.includes('1x2')) {
     if (lower.includes('draw')) return { type: '1X2', pick: 'draw' };
@@ -57,7 +66,10 @@ export function parseMarketString(
     return { type: 'OVER_UNDER', pick: ouMatch[1] as 'over' | 'under', line: parseFloat(ouMatch[2]) };
   }
 
-  if (lower.includes('btts') || lower.includes('both teams to score')) {
+  // "GG/NG" (Goal-Goal / No-Goal) is common BTTS shorthand on Nigerian
+  // bookmakers (SportyBet, Bet9ja) -- as real as "BTTS" itself, not a
+  // rare edge case.
+  if (lower.includes('btts') || lower.includes('both teams to score') || lower.includes('gg/ng')) {
     if (lower.includes('yes')) return { type: 'BTTS', pick: 'yes' };
     if (lower.includes('no')) return { type: 'BTTS', pick: 'no' };
   }
