@@ -4,7 +4,7 @@ import { decodeBet9jaCode } from '@/lib/services/bet9ja';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import type { DecodeResult } from '@/lib/services/types';
 import { computeConfidenceScoreFromNames } from '@/lib/services/confidenceEngine';
-import { computeTipsterConsensus } from '@/lib/services/tipsterConsensus';
+import { fetchTipsterSources, matchTipsterConsensus } from '@/lib/services/tipsterConsensus';
 import { parseMarketString } from '@/lib/services/splitter';
 
 export const runtime = 'nodejs';
@@ -103,13 +103,36 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result);
   }
 
+  // Tipster sources (Statarea, Predictz) are fetched ONCE for the whole
+  // request here, then matched per selection below with no further I/O.
+  // This was previously called per-selection inside the loop -- a real
+  // performance bug: it multiplied a multi-selection slip's decode time
+  // by its selection count (each selection re-fetching both sites'
+  // entire prediction pages from scratch), risking a Vercel timeout on
+  // anything but a single-selection code.
+  // Use the slip's own date (first selection with a kickoff time) rather
+  // than always assuming today -- matters for a code decoded for
+  // tomorrow's fixtures. Statarea's /predictions page is single-date, so
+  // this is still one fetch for the whole request, just scoped to the
+  // right day; selections spanning multiple distinct dates will only
+  // match against this one date (a known simplification, not a bug).
+  const firstKickoffDate = result.selections.find((s) => s.kickoffAt)?.kickoffAt?.slice(0, 10);
+
+  let tipsterSourceData;
+  try {
+    tipsterSourceData = await fetchTipsterSources(firstKickoffDate);
+  } catch (err) {
+    console.error('[decode] fetchTipsterSources failed entirely:', err);
+    tipsterSourceData = { statarea: [], predictz: [] };
+  }
+
   // Score each selection with TWO independent scores, never combined:
-  // `score` (BetMeter Score, our own Poisson model) and `tipsterScore`
-  // (Tipster Score, averaged external prediction-site consensus -- see
-  // tipsterConsensus.ts). Run concurrently per selection since they hit
-  // different data sources; only score when the market can be confidently
-  // identified (parseMarketString returns null rather than guessing for
-  // anything unconfirmed). Throttled since football-data.org is 10 req/min.
+  // `score` (BetMeter Score, our own Poisson model -- still a real,
+  // per-selection football-data.org lookup) and `tipsterScore` (now just
+  // a cheap in-memory match against the data fetched above). Only score
+  // when the market can be confidently identified (parseMarketString
+  // returns null rather than guessing for anything unconfirmed).
+  // Throttled since football-data.org is 10 req/min.
   const scoredSelections = [];
   for (const sel of result.selections) {
     let score: number | null = null;
@@ -118,28 +141,27 @@ export async function POST(req: NextRequest) {
     const parsedMarket = parseMarketString(sel.market, sel.homeTeam, sel.awayTeam);
 
     if (parsedMarket) {
-      const [ownOutcome, tipsterOutcome] = await Promise.allSettled([
-        computeConfidenceScoreFromNames({
+      try {
+        const ownOutcome = await computeConfidenceScoreFromNames({
           homeTeamName: sel.homeTeam,
           awayTeamName: sel.awayTeam,
           kickoffAt: sel.kickoffAt,
           market: parsedMarket,
-        }),
-        computeTipsterConsensus(sel.homeTeam, sel.awayTeam, sel.kickoffAt, parsedMarket),
-      ]);
-
-      if (ownOutcome.status === 'fulfilled' && ownOutcome.value.status === 'ok') {
-        score = ownOutcome.value.result.score;
-      } else if (ownOutcome.status === 'rejected') {
-        console.error('[decode] BetMeter Score failed for selection:', sel.homeTeam, ownOutcome.reason);
+        });
+        if (ownOutcome.status === 'ok') score = ownOutcome.result.score;
+      } catch (err) {
+        console.error('[decode] BetMeter Score failed for selection:', sel.homeTeam, err);
       }
 
-      if (tipsterOutcome.status === 'fulfilled') {
-        tipsterScore = tipsterOutcome.value.score;
-        tipsterSources = tipsterOutcome.value.sources;
-      } else {
-        console.error('[decode] Tipster Score failed for selection:', sel.homeTeam, tipsterOutcome.reason);
-      }
+      const tipsterOutcome = matchTipsterConsensus(
+        sel.homeTeam,
+        sel.awayTeam,
+        sel.kickoffAt,
+        parsedMarket,
+        tipsterSourceData,
+      );
+      tipsterScore = tipsterOutcome.score;
+      tipsterSources = tipsterOutcome.sources;
 
       await sleep(150);
     }
