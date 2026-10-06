@@ -32,19 +32,26 @@ export interface TipsterSourceData {
 }
 
 // Call ONCE per decode request (or per Predictor batch run), before
-// scoring any individual selections. Each source fetch is independently
-// fault-tolerant (Promise.allSettled) -- one source failing doesn't
-// block the other.
-export async function fetchTipsterSources(kickoffDate?: string): Promise<TipsterSourceData> {
-  const [statareaResult, predictzResult] = await Promise.allSettled([
-    fetchStatareaPredictions(kickoffDate),
-    fetchPredictzPredictions(),
+// scoring any individual selections -- pass every DISTINCT kickoff date
+// present across all selections, not just one. A slip spanning multiple
+// days (common) needs Statarea fetched once per distinct date; scoping
+// to only the first selection's date silently loses matches for every
+// other date -- that happened in production and is what this fixes.
+// Still cheap: bounded by distinct dates in the slip (typically 1-4),
+// not by selection count. Each fetch is independently fault-tolerant.
+export async function fetchTipsterSources(kickoffDates: string[] = []): Promise<TipsterSourceData> {
+  const uniqueDates = Array.from(new Set(kickoffDates.filter(Boolean)));
+  const datesToFetch = uniqueDates.length > 0 ? uniqueDates : [undefined]; // undefined = Statarea's own "today" default
+
+  const [statareaSettled, predictzSettled] = await Promise.all([
+    Promise.allSettled(datesToFetch.map((d) => fetchStatareaPredictions(d))),
+    Promise.allSettled([fetchPredictzPredictions()]),
   ]);
 
-  return {
-    statarea: statareaResult.status === 'fulfilled' ? statareaResult.value : [],
-    predictz: predictzResult.status === 'fulfilled' ? predictzResult.value : [],
-  };
+  const statarea = statareaSettled.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
+  const predictz = predictzSettled[0].status === 'fulfilled' ? predictzSettled[0].value : [];
+
+  return { statarea, predictz };
 }
 
 function getStatareaProbability(prediction: StatareaPrediction, market: MarketSelector): number | null {

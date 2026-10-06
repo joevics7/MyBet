@@ -110,17 +110,17 @@ export async function POST(req: NextRequest) {
   // by its selection count (each selection re-fetching both sites'
   // entire prediction pages from scratch), risking a Vercel timeout on
   // anything but a single-selection code.
-  // Use the slip's own date (first selection with a kickoff time) rather
-  // than always assuming today -- matters for a code decoded for
-  // tomorrow's fixtures. Statarea's /predictions page is single-date, so
-  // this is still one fetch for the whole request, just scoped to the
-  // right day; selections spanning multiple distinct dates will only
-  // match against this one date (a known simplification, not a bug).
-  const firstKickoffDate = result.selections.find((s) => s.kickoffAt)?.kickoffAt?.slice(0, 10);
+  // Every distinct date present in the slip -- a code can bundle
+  // selections across several days, and each needs its own Statarea
+  // fetch (scoping to only one date silently loses matches for the
+  // others, which happened in production before this fix).
+  const kickoffDates = Array.from(
+    new Set(result.selections.map((s) => s.kickoffAt?.slice(0, 10)).filter((d): d is string => !!d)),
+  );
 
   let tipsterSourceData;
   try {
-    tipsterSourceData = await fetchTipsterSources(firstKickoffDate);
+    tipsterSourceData = await fetchTipsterSources(kickoffDates);
   } catch (err) {
     console.error('[decode] fetchTipsterSources failed entirely:', err);
     tipsterSourceData = { statarea: [], predictz: [] };
