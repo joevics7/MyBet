@@ -8,6 +8,9 @@
 import type { MarketSelector } from './confidenceEngine';
 import { fetchStatareaPredictions, type StatareaPrediction } from './statarea';
 import { findStatareaMatch } from './statareaMatcher';
+import { fetchPredictzPredictions } from './predictz';
+import { findPredictzMatch } from './predictzMatcher';
+import { deriveMarketFromScore } from './scoreToMarkets';
 
 export interface TipsterConsensusResult {
   score: number | null; // 0-100, averaged across matched sources; null if none matched
@@ -57,6 +60,21 @@ export async function computeTipsterConsensus(
     }
   } catch (err) {
     console.error('[tipsterConsensus] statarea failed:', err);
+  }
+
+  try {
+    const predictions = await fetchPredictzPredictions();
+    const matched = findPredictzMatch(homeTeam, awayTeam, predictions);
+    if (matched?.predictedScore) {
+      const derived = deriveMarketFromScore(matched.predictedScore, market);
+      // derived is 0 or 1 (a single predicted score, not a percentage --
+      // see scoreToMarkets.ts) -- averaged in equally alongside Statarea's
+      // real percentage for now. Cruder signal, same weight; worth
+      // revisiting once we see how it performs.
+      if (derived !== null) scores.push({ source: 'predictz', score: derived * 100 });
+    }
+  } catch (err) {
+    console.error('[tipsterConsensus] predictz failed:', err);
   }
 
   // Next prediction site goes here: its own try/catch, push into `scores`
