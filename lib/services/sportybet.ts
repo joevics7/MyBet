@@ -13,7 +13,22 @@
 
 import type { DecodeStatus, NormalizedSelection, DecodeResult } from './types';
 
-const SPORTYBET_BASE_URL = 'https://www.sportybet.com/api/ng/orders/share';
+// Config for any bookmaker running the SportyBet-style share API. Football.com
+// is a SportyBet white-label and MSport uses the same Sportradar-style IDs, so
+// they share this adapter and differ only by these values.
+export interface ShareApiConfig {
+  baseUrl: string; // e.g. https://www.sportybet.com/api/ng/orders/share
+  origin: string;
+  referer: string;
+}
+
+export const SPORTYBET_CONFIG: ShareApiConfig = {
+  baseUrl: 'https://www.sportybet.com/api/ng/orders/share',
+  origin: 'https://www.sportybet.com',
+  referer: 'https://www.sportybet.com/ng/',
+};
+
+const SPORTYBET_BASE_URL = SPORTYBET_CONFIG.baseUrl;
 
 export type SportyBetDecodeStatus = DecodeStatus;
 export type SportyBetDecodeResult = DecodeResult;
@@ -89,6 +104,13 @@ export interface EncodeResult {
 // from the original inferred version: specifier is always present as a
 // key, explicitly null when there's no line -- not omitted.
 export async function encodeSportyBetSlip(selections: EncodeSelectionInput[]): Promise<EncodeResult> {
+  return encodeShareSlip(SPORTYBET_CONFIG, selections);
+}
+
+export async function encodeShareSlip(
+  cfg: ShareApiConfig,
+  selections: EncodeSelectionInput[],
+): Promise<EncodeResult> {
   if (selections.length === 0) return { status: 'failed', shareCode: null };
 
   const body = {
@@ -102,15 +124,15 @@ export async function encodeSportyBetSlip(selections: EncodeSelectionInput[]): P
 
   let res: Response;
   try {
-    res = await fetch(SPORTYBET_BASE_URL, {
+    res = await fetch(cfg.baseUrl, {
       method: 'POST',
       headers: {
         Accept: '*/*',
         'Content-Type': 'application/json;charset=UTF-8',
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        Origin: 'https://www.sportybet.com',
-        Referer: 'https://www.sportybet.com/ng/',
+        Origin: cfg.origin,
+        Referer: cfg.referer,
         clientid: 'web',
         platform: 'web',
       },
@@ -145,7 +167,11 @@ export async function encodeSportyBetSlip(selections: EncodeSelectionInput[]): P
 }
 
 export async function decodeSportyBetCode(code: string): Promise<SportyBetDecodeResult> {
-  const url = `${SPORTYBET_BASE_URL}/${encodeURIComponent(code)}?_t=${Date.now()}`;
+  return decodeShareCode(SPORTYBET_CONFIG, code);
+}
+
+export async function decodeShareCode(cfg: ShareApiConfig, code: string): Promise<SportyBetDecodeResult> {
+  const url = `${cfg.baseUrl}/${encodeURIComponent(code)}?_t=${Date.now()}`;
 
   let res: Response;
   try {
@@ -155,7 +181,7 @@ export async function decodeSportyBetCode(code: string): Promise<SportyBetDecode
         Accept: '*/*',
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        Referer: 'https://www.sportybet.com/ng/',
+        Referer: cfg.referer,
         clientid: 'web',
         platform: 'web',
       },

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { decodeSportyBetCode } from '@/lib/services/sportybet';
+import { getPlatform } from '@/lib/services/platforms';
 
 export const runtime = 'nodejs';
 
@@ -66,12 +66,12 @@ export async function POST(req: NextRequest) {
   // leg -- see sportybet.ts / bet9ja.ts comments. Bet9ja entries can't be
   // checked this way yet (needs the separate Fixture/Results Feed, not
   // built). Report that honestly rather than guessing or staying silent.
-  if (platformSlug !== 'sportybet') {
+  if (!getPlatform(platformSlug)?.canSettle) {
     await client.from('vault_entries').update({ status: 'unable_to_check' }).eq('id', entry.id);
     return NextResponse.json({ status: 'unable_to_check', reason: `${platformSlug} result-checking not available yet` });
   }
 
-  const decoded = await decodeSportyBetCode(entry.code);
+  const decoded = await getPlatform(platformSlug)!.decode(entry.code);
   if (decoded.status !== 'ok' || decoded.selections.length === 0) {
     // Code may have expired/become unreadable -- leave status as-is
     // rather than guessing; the user can retry later.

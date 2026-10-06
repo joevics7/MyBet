@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { decodeSportyBetCode, encodeSportyBetSlip } from '@/lib/services/sportybet';
+import { getPlatform, deepLinkFor } from '@/lib/services/platforms';
 import { computeConfidenceScoreFromNames } from '@/lib/services/confidenceEngine';
 import { splitSelections, parseMarketString, type SplittableSelection, type SplitMode } from '@/lib/services/splitter';
 
@@ -12,6 +12,7 @@ function sleep(ms: number) {
 
 interface RequestBody {
   code: string;
+  platform?: string;
   mode: SplitMode;
   groupCount?: number;
 }
@@ -28,7 +29,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'code and mode are required' }, { status: 400 });
   }
 
-  const decoded = await decodeSportyBetCode(body.code);
+  const platformSlug = body.platform?.trim().toLowerCase() || 'sportybet';
+  const adapter = getPlatform(platformSlug);
+  if (!adapter) {
+    return NextResponse.json({ error: `"${platformSlug}" isn't supported yet` }, { status: 200 });
+  }
+
+  const decoded = await adapter.decode(body.code);
   if (decoded.status !== 'ok') {
     return NextResponse.json({ error: "Couldn't decode that code" }, { status: 200 });
   }
@@ -85,12 +92,16 @@ export async function POST(req: NextRequest) {
   // from the encode call entirely rather than sent with blank/wrong IDs.
   const groupsWithCodes = await Promise.all(
     groups.map(async (group) => {
+      // Platforms without a create endpoint (Bangbet, Bet9ja) return the
+      // split as a pick list with confidence; the user re-enters it by hand.
+      if (!adapter.encode) return { ...group, generatedCode: null, deepLink: null };
+
       const encodable = group.selections.filter((s) => s.rawMarketId && s.rawOutcomeId);
       if (encodable.length !== group.selections.length) {
-        return { ...group, generatedCode: null };
+        return { ...group, generatedCode: null, deepLink: null };
       }
 
-      const encodeResult = await encodeSportyBetSlip(
+      const encodeResult = await adapter.encode!(
         encodable.map((s) => ({
           externalEventId: s.externalEventId,
           marketId: s.rawMarketId!,
@@ -98,9 +109,19 @@ export async function POST(req: NextRequest) {
           specifier: s.rawSpecifier,
         })),
       );
-      return { ...group, generatedCode: encodeResult.shareCode };
+      return {
+        ...group,
+        generatedCode: encodeResult.shareCode,
+        deepLink: encodeResult.shareCode ? deepLinkFor(adapter.slug, encodeResult.shareCode) : null,
+      };
     }),
   );
 
-  return NextResponse.json({ status: 'ok', sourceCode: body.code, groups: groupsWithCodes });
+  return NextResponse.json({
+    status: 'ok',
+    platform: adapter.slug,
+    canEncode: !!adapter.encode,
+    sourceCode: body.code,
+    groups: groupsWithCodes,
+  });
 }

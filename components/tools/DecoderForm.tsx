@@ -4,10 +4,7 @@ import { useState } from 'react';
 import { Loader2, Search, CheckCircle2, XCircle, MinusCircle } from 'lucide-react';
 import type { DecodeResult, NormalizedSelection } from '@/lib/services/types';
 
-const PLATFORMS = [
-  { slug: 'sportybet', label: 'SportyBet' },
-  { slug: 'bet9ja', label: 'Bet9ja' },
-];
+import { PLATFORM_OPTIONS as PLATFORMS } from '@/lib/platformList';
 
 function ResultIcon({ selection }: { selection: NormalizedSelection }) {
   if (selection.isWinning === true) {
@@ -27,7 +24,7 @@ function scoreColor(score: number | null | undefined): string {
 }
 
 export function DecoderForm() {
-  const [platform, setPlatform] = useState(PLATFORMS[0].slug);
+  const [platform, setPlatform] = useState<string>(PLATFORMS[0].slug);
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<DecodeResult | null>(null);

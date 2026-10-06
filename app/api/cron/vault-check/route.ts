@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { decodeSportyBetCode } from '@/lib/services/sportybet';
+import { getPlatform } from '@/lib/services/platforms';
 import { sendMessage } from '@/lib/services/telegram';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 
@@ -66,13 +66,13 @@ async function runVaultCheck(): Promise<NextResponse> {
     // Only SportyBet reports settlement via decode -- see sportybet.ts /
     // bet9ja.ts comments. Mark others unable_to_check once, rather than
     // re-attempting them forever on every future run.
-    if (platformSlug !== 'sportybet') {
+    if (!getPlatform(platformSlug)?.canSettle) {
       await admin.from('vault_entries').update({ status: 'unable_to_check' }).eq('id', entry.id);
       continue;
     }
 
     try {
-      const decoded = await decodeSportyBetCode(entry.code);
+      const decoded = await getPlatform(platformSlug)!.decode(entry.code);
       if (decoded.status !== 'ok' || decoded.selections.length === 0) continue; // couldn't re-decode right now -- leave pending, try again next run
 
       const allSettled = decoded.selections.every((s) => s.isWinning !== null);

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Loader2, Search, Layers } from 'lucide-react';
+import { PLATFORM_OPTIONS } from '@/lib/platformList';
 
 interface SplitSelection {
   homeTeam: string;
@@ -14,6 +15,7 @@ interface SplitGroup {
   label: string;
   selections: SplitSelection[];
   generatedCode: string | null;
+  deepLink?: string | null;
 }
 
 const MODES: { value: 'risk' | 'even' | 'market'; label: string }[] = [
@@ -30,6 +32,7 @@ function scoreColor(score: number | null): string {
 }
 
 export function SplitterForm() {
+  const [platform, setPlatform] = useState('sportybet');
   const [code, setCode] = useState('');
   const [mode, setMode] = useState<'risk' | 'even' | 'market'>('risk');
   const [groupCount, setGroupCount] = useState(2);
@@ -49,7 +52,7 @@ export function SplitterForm() {
       const res = await fetch('/api/splitter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: code.trim(), mode, groupCount }),
+        body: JSON.stringify({ platform, code: code.trim(), mode, groupCount }),
       });
       const data = await res.json();
 
@@ -69,8 +72,25 @@ export function SplitterForm() {
     <div className="rounded-sm border border-border bg-card p-6">
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
+          <label htmlFor="platform" className="text-xs font-mono uppercase tracking-wide text-muted-foreground">
+            Platform
+          </label>
+          <select
+            id="platform"
+            value={platform}
+            onChange={(e) => setPlatform(e.target.value)}
+            className="mt-1 w-full rounded-sm border border-border bg-background px-3 py-2 text-sm"
+          >
+            {PLATFORM_OPTIONS.map((p) => (
+              <option key={p.slug} value={p.slug}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
           <label htmlFor="code" className="text-xs font-mono uppercase tracking-wide text-muted-foreground">
-            SportyBet booking code
+            Booking code
           </label>
           <input
             id="code"
@@ -144,7 +164,7 @@ export function SplitterForm() {
                   <p className="text-xs font-mono uppercase tracking-wide">{group.label}</p>
                 </div>
                 <span className="text-xs font-mono text-muted-foreground">
-                  {group.generatedCode ?? 'Code generation not available yet'}
+                  {group.generatedCode ?? 'No code for this platform: re-enter these picks manually'}
                 </span>
               </div>
               <div className="space-y-1.5">

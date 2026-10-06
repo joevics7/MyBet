@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { decodeSportyBetCode } from '@/lib/services/sportybet';
-import { decodeBet9jaCode } from '@/lib/services/bet9ja';
+import { getPlatform } from '@/lib/services/platforms';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import type { DecodeResult } from '@/lib/services/types';
 import { computeConfidenceScoreFromNames } from '@/lib/services/confidenceEngine';
@@ -13,13 +12,6 @@ export const maxDuration = 30; // now does real scoring work per selection, not 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
-// Platform decode services, keyed by platforms.slug. Add an entry here as
-// each platform's Decode Service ships.
-const DECODERS: Record<string, (code: string) => Promise<DecodeResult>> = {
-  sportybet: decodeSportyBetCode,
-  bet9ja: decodeBet9jaCode,
-};
 
 export async function POST(req: NextRequest) {
   let body: { platform?: string; code?: string };
@@ -36,15 +28,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'platform and code are required' }, { status: 400 });
   }
 
-  const decoder = DECODERS[platform];
-  if (!decoder) {
+  const adapter = getPlatform(platform);
+  if (!adapter) {
     return NextResponse.json(
       { status: 'unsupported_platform', message: `No decode service for "${platform}" yet.` },
       { status: 200 },
     );
   }
 
-  const result = await decoder(code);
+  const result = await adapter.decode(code);
 
   // Persist best-effort. If Supabase isn't configured yet, or the write
   // fails, the caller still gets their decode result -- persistence is a
