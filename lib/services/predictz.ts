@@ -8,8 +8,10 @@
 // logs for "[predictz]" -- that means the pattern below needs adjusting
 // to match the site's actual current layout, not that anything crashed.
 
-import { fetchViaZenRows } from './zenrows';
+import { fetchViaZenRows, stripHtml, fetchAndStripViaZenRows } from './zenrows';
 import type { PredictedScore } from './scoreToMarkets';
+
+const PREDICTZ_URL = 'https://www.predictz.com/predictions/';
 
 export interface PredictzPrediction {
   homeTeam: string;
@@ -23,15 +25,12 @@ function parseScoreString(s: string): PredictedScore | null {
   return { home: parseInt(m[1], 10), away: parseInt(m[2], 10) };
 }
 
-function stripHtml(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/\s+/g, ' ')
-    .trim();
+// Raw, unparsed text -- for inspecting predictz's real current layout
+// before trusting any parser against it. fetchPredictzPredictions() below
+// is NOT currently wired into the product (tipsterConsensus.ts calls it,
+// but it reliably returns 0 results) until this is confirmed for real.
+export async function fetchPredictzRawText(): Promise<string | null> {
+  return fetchAndStripViaZenRows(PREDICTZ_URL, { jsRender: true, premiumProxy: true });
 }
 
 // Best-effort, loose pattern: "<Home Team> v <Away Team>" followed within
