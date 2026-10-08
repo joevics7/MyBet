@@ -2,14 +2,9 @@
 
 import { useState } from 'react';
 import { Loader2, Scale } from 'lucide-react';
-import type { OddsComparison } from '@/lib/services/oddsCompare';
+import type { OddsComparison, LegComparison } from '@/lib/services/oddsCompare';
 
-// Client-safe: only platforms that share SportyBet's IDs can be compared.
-const SOURCES = [
-  { slug: 'sportybet', label: 'SportyBet' },
-  { slug: 'footballcom', label: 'Football.com' },
-  { slug: 'msport', label: 'MSport' },
-];
+import { PLATFORM_OPTIONS as SOURCES } from '@/lib/platformList';
 
 export function OddsCompareForm() {
   const [platform, setPlatform] = useState('sportybet');
@@ -40,7 +35,7 @@ export function OddsCompareForm() {
     }
   }
 
-  const label = (slug: string) => result?.platforms.find((p) => p.slug === slug)?.label ?? slug;
+  const label = (slug: string) => result?.labels[slug] ?? slug;
   const best = result?.platforms.find((p) => p.slug === result.recommendedSlug);
   const source = result?.platforms.find((p) => p.slug === result.source.slug);
 
@@ -107,8 +102,8 @@ export function OddsCompareForm() {
                 No platform could price every pick, so there's no single best slip. See each pick below.
               </p>
             )}
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              {result.platforms.map((p) => (
+            <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {result.platforms.slice(0, 5).map((p) => (
                 <div
                   key={p.slug}
                   className={`rounded-sm border px-2 py-2 text-center ${
@@ -136,21 +131,8 @@ export function OddsCompareForm() {
                   {leg.homeTeam} v {leg.awayTeam}
                 </p>
                 <p className="text-xs text-muted-foreground">{leg.market}</p>
-                <div className="mt-2 space-y-1">
-                  {Object.entries(leg.quotes).map(([slug, q]) => (
-                    <div key={slug} className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">{label(slug)}</span>
-                      <span
-                        className={`font-mono ${
-                          slug === leg.bestSlug ? 'font-semibold text-[hsl(var(--verified))]' : ''
-                        } ${q.odds === null || q.locked ? 'text-muted-foreground' : ''}`}
-                      >
-                        {q.odds !== null ? q.odds.toFixed(2) : '—'}
-                        {q.reason && <span className="ml-1.5 text-[10px] font-sans">({q.reason})</span>}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                <QuoteList leg={leg} label={label} />
+                <ValueBadges leg={leg} />
                 {leg.gainPct !== null && leg.gainPct > 0 && leg.bestSlug && (
                   <p className="mt-2 text-xs text-[hsl(var(--verified))]">
                     +{leg.gainPct}% better on {label(leg.bestSlug)}
@@ -159,10 +141,85 @@ export function OddsCompareForm() {
               </li>
             ))}
           </ul>
+          {!result.outsideOdds && (
+            <p className="text-xs text-muted-foreground">
+              Outside bookmakers are switched off, so only directly connected platforms are shown.
+            </p>
+          )}
           <p className="text-[11px] text-muted-foreground">
             Prices are checked live and can change. Always confirm the odds on the platform before you bet.
           </p>
         </div>
+      )}
+    </div>
+  );
+}
+
+function QuoteList({ leg, label }: { leg: LegComparison; label: (s: string) => string }) {
+  const rows = Object.entries(leg.quotes)
+    .filter(([, q]) => q.odds !== null)
+    .sort((a, b) => Number(a[1].locked) - Number(b[1].locked) || b[1].odds! - a[1].odds!);
+  const missing = Object.entries(leg.quotes).filter(([, q]) => q.odds === null);
+  const top = rows.slice(0, 5);
+  const rest = rows.slice(5);
+
+  const row = ([slug, q]: [string, LegComparison['quotes'][string]]) => (
+    <div key={slug} className="flex items-center justify-between text-sm">
+      <span className="text-muted-foreground">{label(slug)}</span>
+      <span
+        className={`font-mono ${slug === leg.bestSlug ? 'font-semibold text-[hsl(var(--verified))]' : ''} ${
+          q.locked ? 'text-muted-foreground' : ''
+        }`}
+      >
+        {q.odds!.toFixed(2)}
+        {q.reason && <span className="ml-1.5 text-[10px] font-sans">({q.reason})</span>}
+      </span>
+    </div>
+  );
+
+  return (
+    <div className="mt-2 space-y-1">
+      {top.map(row)}
+      {rest.length > 0 && (
+        <details>
+          <summary className="cursor-pointer text-xs text-muted-foreground">Show {rest.length} more bookmakers</summary>
+          <div className="mt-1 space-y-1">{rest.map(row)}</div>
+        </details>
+      )}
+      {missing.length > 0 && (
+        <p className="text-[10px] text-muted-foreground">
+          No price: {missing.map(([slug, q]) => `${label(slug)} (${q.reason ?? 'n/a'})`).join(', ')}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ValueBadges({ leg }: { leg: LegComparison }) {
+  return (
+    <div className="mt-2 space-y-1">
+      {leg.gainPct !== null && leg.gainPct > 0 && leg.bestSlug && (
+        <p className="text-xs text-[hsl(var(--verified))]">+{leg.gainPct}% better than your platform</p>
+      )}
+      {leg.valuePct !== null && leg.modelProb !== null && (
+        <p className="text-xs">
+          <span
+            className={`mr-1.5 rounded-sm border px-1.5 py-0.5 text-[10px] font-mono uppercase ${
+              leg.valueLabel === 'value' ? 'border-[hsl(var(--verified))] text-[hsl(var(--verified))]' : 'border-border text-muted-foreground'
+            }`}
+          >
+            {leg.valueLabel === 'value' ? 'Value' : leg.valueLabel === 'slight' ? 'Fair' : 'Poor value'}
+          </span>
+          Our model gives this {(leg.modelProb * 100).toFixed(0)}%, which is {leg.valuePct >= 0 ? '+' : ''}
+          {leg.valuePct}% at the best price.
+        </p>
+      )}
+      {leg.vsSharpPct !== null && leg.sharpProb !== null && (
+        <p className="text-xs text-muted-foreground">
+          Pinnacle's no-margin line is {(leg.sharpProb * 100).toFixed(0)}%:{' '}
+          {leg.vsSharpPct >= 0 ? 'the best price beats it' : 'the best price is below it'} ({leg.vsSharpPct >= 0 ? '+' : ''}
+          {leg.vsSharpPct}%).
+        </p>
       )}
     </div>
   );

@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getPlatform } from '@/lib/services/platforms';
-import { compareOdds, comparablePlatforms } from '@/lib/services/oddsCompare';
+import { compareOdds } from '@/lib/services/oddsCompare';
 
-export const maxDuration = 30;
+// OddsPapi's per-endpoint cooldowns space out calls, so a long slip takes a while.
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   let body: { platform?: string; code?: string };
@@ -17,9 +18,8 @@ export async function POST(request: Request) {
   if (!slug || !code) return NextResponse.json({ error: 'platform and code are required' }, { status: 400 });
 
   const adapter = getPlatform(slug);
-  if (!adapter?.oddsLookup) {
-    const names = comparablePlatforms().map((p) => p.label).join(', ');
-    return NextResponse.json({ status: 'unsupported', message: `Odds comparison works for: ${names}.` });
+  if (!adapter) {
+    return NextResponse.json({ status: 'unsupported', message: `"${slug}" isn't supported yet.` });
   }
 
   const decoded = await adapter.decode(code);

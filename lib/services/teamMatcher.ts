@@ -26,15 +26,50 @@ import { fetchMatchesByDateRange as afFetchRange, isApiFootballConfigured } from
 // provider it came from, and form must be fetched from that same provider.
 export type FixtureProvider = 'apifootball' | 'footballdata';
 
-function normalizeTeamName(name: string): string {
-  return name
+// Whole-name nicknames/abbreviations that bigram similarity can't bridge.
+const NAME_ALIASES: Record<string, string> = {
+  spurs: 'tottenham hotspur',
+  wolves: 'wolverhampton wanderers',
+  'man city': 'manchester city',
+  'man utd': 'manchester united',
+  'man united': 'manchester united',
+  'newcastle utd': 'newcastle united',
+  'west ham': 'west ham united',
+  'brighton': 'brighton and hove albion',
+  'leicester': 'leicester city',
+  'atletico madrid': 'atletico de madrid',
+  'atl madrid': 'atletico de madrid',
+  barca: 'barcelona',
+  'real sociedad': 'real sociedad',
+  bayern: 'bayern munich',
+  gladbach: 'borussia monchengladbach',
+  dortmund: 'borussia dortmund',
+  leverkusen: 'bayer leverkusen',
+  psg: 'paris saint germain',
+  'paris sg': 'paris saint germain',
+  inter: 'inter milan',
+};
+
+// Extra words that make the longer name a DIFFERENT club, not a longer form
+// of the same one ("milan" vs "inter milan", "sheffield" vs "sheffield wednesday").
+const DISTINGUISHING_WORDS = new Set([
+  'inter', 'real', 'atletico', 'athletic', 'sporting', 'dynamo', 'spartak', 'lokomotiv', 'cska',
+  'city', 'united', 'town', 'county', 'rovers', 'wanderers', 'wednesday', 'albion', 'athletic',
+  'olympic', 'racing', 'new', 'north', 'south', 'east', 'west', 'saint', 'st', 'borussia', 'bayer',
+  'women', 'ladies', 'u19', 'u20', 'u21', 'u23', 'ii', 'b', 'reserves', 'youth',
+]);
+
+export function normalizeTeamName(name: string): string {
+  const base = name
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '') // strip accents
     .replace(/\b(fc|cf|sc|afc|cfc|ca|ac|ud|cd|if|bk|fk|sd|srl|rc)\b/g, '')
+    .replace(/&/g, ' and ')
     .replace(/[^a-z0-9\s]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+  return NAME_ALIASES[base] ?? base;
 }
 
 function bigrams(s: string): Set<string> {
@@ -47,9 +82,19 @@ function bigrams(s: string): Set<string> {
 // Dice coefficient on character bigrams -- simple, dependency-free, and
 // tolerant of the kind of small spelling/formatting differences expected
 // between two independent sources naming the same team.
-function similarity(a: string, b: string): number {
+export function similarity(a: string, b: string): number {
   if (!a || !b) return 0;
   if (a === b) return 1;
+  // One name wholly contained in the other as whole words ("psv" in
+  // "psv eindhoven", "ajax" in "afc ajax"): a short form of the same club.
+  // Both sides need a real word (3+ chars) so "man" can't match everything.
+  const ta = a.split(' ');
+  const tb = b.split(' ');
+  const [short, long] = ta.length <= tb.length ? [ta, tb] : [tb, ta];
+  if (short.length < long.length && short.every((t) => t.length >= 3 && long.includes(t))) {
+    const extra = long.filter((t) => !short.includes(t));
+    if (!extra.some((t) => DISTINGUISHING_WORDS.has(t))) return 0.85;
+  }
   const setA = bigrams(a);
   const setB = bigrams(b);
   let overlap = 0;
