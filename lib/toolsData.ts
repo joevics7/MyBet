@@ -40,9 +40,9 @@ export const TOOLS_CATALOG: ToolEntry[] = [
     slug: 'odds-comparison',
     title: 'Odds Comparison',
     shortTitle: 'Odds Compare',
-    tagline: 'Check 2-4 platforms for a better price on the games you actually have.',
+    tagline: 'Check platforms for a better price on the games you actually have.',
     href: '/tools/odds-comparison',
-    status: 'soon',
+    status: 'live',
   },
   {
     slug: 'vault',

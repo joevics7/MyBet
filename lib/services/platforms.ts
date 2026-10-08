@@ -26,6 +26,9 @@ export interface PlatformAdapter {
   encode?: (selections: EncodeSelectionInput[]) => Promise<EncodeResult>;
   canSettle: boolean;
   verified: boolean;
+  // Shares SportyBet's Sportradar IDs, so exact picks can be priced here from
+  // another platform's IDs (see oddsCompare.ts).
+  oddsLookup?: boolean;
   // Where the user pastes/loads a code. {code} is substituted.
   deepLink?: string;
 }
@@ -34,7 +37,7 @@ function shareFamily(
   slug: string,
   label: string,
   cfg: ShareApiConfig,
-  opts: { canSettle: boolean; verified: boolean; deepLink?: string },
+  opts: { canSettle: boolean; verified: boolean; deepLink?: string; oddsLookup?: boolean },
 ): PlatformAdapter {
   return {
     slug,
@@ -49,6 +52,7 @@ export const PLATFORMS: PlatformAdapter[] = [
   shareFamily('sportybet', 'SportyBet', SPORTYBET_CONFIG, {
     canSettle: true,
     verified: true,
+    oddsLookup: true,
     deepLink: 'https://www.sportybet.com/ng/?shareCode={code}',
   }),
   // SportyBet white-label: same stack, same IDs, same response shape.
@@ -60,7 +64,7 @@ export const PLATFORMS: PlatformAdapter[] = [
       origin: 'https://www.football.com',
       referer: 'https://www.football.com/ng/',
     },
-    { canSettle: true, verified: false, deepLink: 'https://www.football.com/ng/m?shareCode={code}' },
+    { canSettle: true, verified: false, oddsLookup: true, deepLink: 'https://www.football.com/ng/m?shareCode={code}' },
   ),
   // Same Sportradar-style IDs; path differs. Response shape assumed to match
   // SportyBet's -- unconfirmed, so settlement checking stays off until verified.
@@ -72,7 +76,7 @@ export const PLATFORMS: PlatformAdapter[] = [
       origin: 'https://www.msport.com',
       referer: 'https://www.msport.com/ng/',
     },
-    { canSettle: false, verified: false },
+    { canSettle: false, verified: false, oddsLookup: true },
   ),
   {
     slug: 'bangbet',
