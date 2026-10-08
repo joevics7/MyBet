@@ -1,5 +1,5 @@
 import { fetchStatareaPredictions } from '@/lib/services/statarea';
-import { fetchPredictzRawText } from '@/lib/services/predictz';
+import { fetchPredictzPredictions } from '@/lib/services/predictz';
 import { fetchForebetRawText } from '@/lib/services/forebet';
 
 // Diagnostic page, not a product feature -- not linked from nav. Statarea
@@ -41,14 +41,14 @@ function RawTextSection({
 export default async function ScrapeStatusPage() {
   const [statareaResult, predictzResult, forebetResult] = await Promise.allSettled([
     fetchStatareaPredictions(),
-    fetchPredictzRawText(),
+    fetchPredictzPredictions(),
     fetchForebetRawText(),
   ]);
 
   const statarea = statareaResult.status === 'fulfilled' ? statareaResult.value : [];
   const statareaError = statareaResult.status === 'rejected' ? String(statareaResult.reason) : null;
 
-  const predictzText = predictzResult.status === 'fulfilled' ? predictzResult.value : null;
+  const predictz = predictzResult.status === 'fulfilled' ? predictzResult.value : [];
   const predictzError = predictzResult.status === 'rejected' ? String(predictzResult.reason) : null;
 
   const forebetText = forebetResult.status === 'fulfilled' ? forebetResult.value : null;
@@ -82,7 +82,28 @@ export default async function ScrapeStatusPage() {
         </div>
       </section>
 
-      <RawTextSection title="Predictz" text={predictzText} error={predictzError} />
+      <section className="mb-10">
+        <h2 className="font-bold mb-2">
+          Predictz &mdash; {predictz.length} predictions fetched (structured, parsed)
+          {predictzError && <span className="text-[hsl(var(--rust))]"> (ERROR: {predictzError})</span>}
+        </h2>
+        <div className="space-y-1.5 max-h-[600px] overflow-auto border border-border rounded-sm p-3 bg-card">
+          {predictz.length === 0 && !predictzError && (
+            <p className="text-muted-foreground">
+              Fetched successfully but parsed 0 predictions -- the pattern likely needs re-checking
+              against the current page layout.
+            </p>
+          )}
+          {predictz.map((p, i) => (
+            <div key={i} className="border-b border-border/50 pb-1.5">
+              {p.homeTeam} v {p.awayTeam} &mdash; predicted:{' '}
+              {p.predictedScore ? `${p.predictedScore.home}-${p.predictedScore.away}` : 'none'} | odds 1:
+              {p.oddsHome ?? '—'} X:{p.oddsDraw ?? '—'} 2:{p.oddsAway ?? '—'}
+            </div>
+          ))}
+        </div>
+      </section>
+
       <RawTextSection title="Forebet" text={forebetText} error={forebetError} />
     </div>
   );

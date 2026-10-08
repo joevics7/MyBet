@@ -39,17 +39,23 @@ export interface TipsterSourceData {
 // other date -- that happened in production and is what this fixes.
 // Still cheap: bounded by distinct dates in the slip (typically 1-4),
 // not by selection count. Each fetch is independently fault-tolerant.
-export async function fetchTipsterSources(kickoffDates: string[] = []): Promise<TipsterSourceData> {
+//
+// Predictz only has 3 fetchable windows (today / tomorrow / a specific
+// later date), not arbitrary per-date fetches like Statarea -- daysAhead
+// (0, 1, or 2) controls how far out to also check, independent of the
+// exact kickoffDates passed.
+export async function fetchTipsterSources(kickoffDates: string[] = [], predictzDaysAhead: number[] = [0]): Promise<TipsterSourceData> {
   const uniqueDates = Array.from(new Set(kickoffDates.filter(Boolean)));
   const datesToFetch = uniqueDates.length > 0 ? uniqueDates : [undefined]; // undefined = Statarea's own "today" default
+  const uniqueDaysAhead = Array.from(new Set(predictzDaysAhead));
 
   const [statareaSettled, predictzSettled] = await Promise.all([
     Promise.allSettled(datesToFetch.map((d) => fetchStatareaPredictions(d))),
-    Promise.allSettled([fetchPredictzPredictions()]),
+    Promise.allSettled(uniqueDaysAhead.map((d) => fetchPredictzPredictions(d))),
   ]);
 
   const statarea = statareaSettled.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
-  const predictz = predictzSettled[0].status === 'fulfilled' ? predictzSettled[0].value : [];
+  const predictz = predictzSettled.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
 
   return { statarea, predictz };
 }
@@ -99,9 +105,25 @@ export function matchTipsterConsensus(
   }
 
   const predictzMatch = findPredictzMatch(homeTeam, awayTeam, sources.predictz);
-  if (predictzMatch?.predictedScore) {
-    const derived = deriveMarketFromScore(predictzMatch.predictedScore, market);
-    if (derived !== null) scores.push({ source: 'predictz', score: derived * 100 });
+  if (predictzMatch) {
+    // Prefer real decimal-odds-implied probability for 1X2 (continuous,
+    // richer signal) when Predictz gave odds; this is the one market it
+    // publishes odds for. Falls back to the derived-score 0/1 signal for
+    // BTTS/Over-Under (no odds given for those) or if 1X2 odds are missing.
+    if (market.type === '1X2' && predictzMatch.oddsHome && predictzMatch.oddsDraw && predictzMatch.oddsAway) {
+      const odds =
+        market.pick === 'home' ? predictzMatch.oddsHome : market.pick === 'draw' ? predictzMatch.oddsDraw : predictzMatch.oddsAway;
+      if (odds > 0) {
+        // Decimal-odds implied probability (1/odds) includes the
+        // bookmaker's margin and isn't normalized across all three
+        // outcomes -- a rough signal, not a true probability, but still
+        // meaningfully richer than a binary derived guess.
+        scores.push({ source: 'predictz', score: Math.round((1 / odds) * 100) });
+      }
+    } else if (predictzMatch.predictedScore) {
+      const derived = deriveMarketFromScore(predictzMatch.predictedScore, market);
+      if (derived !== null) scores.push({ source: 'predictz', score: derived * 100 });
+    }
   }
 
   if (scores.length === 0) return { score: null, sources: [] };

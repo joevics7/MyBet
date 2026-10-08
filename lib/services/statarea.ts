@@ -58,7 +58,7 @@ function stripHtml(html: string): string {
 
 // date: optional YYYY-MM-DD; omit for today's predictions.
 export async function fetchStatareaPredictions(date?: string): Promise<StatareaPrediction[]> {
-  const path = date ? `/predictions/date/${date}` : '/predictions';
+  const path = date ? `/predictions/date/${date}/competition` : '/predictions';
   const url = `https://www.statarea.com${path}`;
 
   let res: Response;

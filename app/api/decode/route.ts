@@ -118,9 +118,24 @@ export async function POST(req: NextRequest) {
     new Set(result.selections.map((s) => s.kickoffAt?.slice(0, 10)).filter((d): d is string => !!d)),
   );
 
+  // Predictz only has 3 fetchable windows (today/tomorrow/one later
+  // date), not arbitrary per-date fetches -- convert each distinct
+  // kickoff date into a days-ahead offset (0/1/2+), capped at 2 since
+  // that's as far out as Predictz's URLs go.
+  const todayMs = new Date().setHours(0, 0, 0, 0);
+  const predictzDaysAhead = Array.from(
+    new Set(
+      kickoffDates.map((d) => {
+        const diffDays = Math.round((new Date(d).setHours(0, 0, 0, 0) - todayMs) / 86400000);
+        return Math.max(0, Math.min(2, diffDays));
+      }),
+    ),
+  );
+  if (predictzDaysAhead.length === 0) predictzDaysAhead.push(0);
+
   let tipsterSourceData;
   try {
-    tipsterSourceData = await fetchTipsterSources(kickoffDates);
+    tipsterSourceData = await fetchTipsterSources(kickoffDates, predictzDaysAhead);
   } catch (err) {
     console.error('[decode] fetchTipsterSources failed entirely:', err);
     tipsterSourceData = { statarea: [], predictz: [] };
