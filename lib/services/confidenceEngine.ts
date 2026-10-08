@@ -16,7 +16,9 @@
 // STILL NOT WIRED to the Decoder UI itself -- this module is ready to
 // call, but /tools/decoder doesn't call it yet.
 
-import { fetchTeamRecentForm } from './footballData';
+import { fetchTeamRecentForm as fdForm } from './footballData';
+import { fetchTeamRecentForm as afForm } from './apiFootball';
+import type { FixtureProvider } from './teamMatcher';
 import { findFixtureByTeamNames, type MatchedFixture } from './teamMatcher';
 import {
   computeTeamStrength,
@@ -42,6 +44,7 @@ export interface ConfidenceScoreInput {
   awayTeamName: string;
   market: MarketSelector;
   leagueAvg?: LeagueAverages;
+  provider?: FixtureProvider; // which provider the team IDs belong to (default football-data)
 }
 
 export interface ConfidenceScoreResult {
@@ -120,11 +123,10 @@ export async function computeMatchProbabilities(
   awayTeamId: number,
   overUnderLines: number[] = [1.5, 2.5, 3.5],
   leagueAvg?: LeagueAverages,
+  provider: FixtureProvider = 'footballdata',
 ): Promise<MatchProbabilitiesOutcome> {
-  const [homeForm, awayForm] = await Promise.all([
-    fetchTeamRecentForm(homeTeamId),
-    fetchTeamRecentForm(awayTeamId),
-  ]);
+  const fetchForm = provider === 'apifootball' ? afForm : fdForm;
+  const [homeForm, awayForm] = await Promise.all([fetchForm(homeTeamId), fetchForm(awayTeamId)]);
 
   if (homeForm.length < MIN_SAMPLE_SIZE || awayForm.length < MIN_SAMPLE_SIZE) {
     return {
@@ -169,6 +171,7 @@ export async function computeConfidenceScore(input: ConfidenceScoreInput): Promi
     input.awayTeamId,
     input.market.type === 'OVER_UNDER' ? [input.market.line] : undefined,
     input.leagueAvg,
+    input.provider,
   );
 
   if (outcome.status === 'insufficient_data') return outcome;
@@ -216,7 +219,7 @@ export async function computeConfidenceScoreFromNames(
   if (!fixture) {
     return {
       status: 'not_covered',
-      message: "No matching fixture found in football-data.org's free-tier competitions.",
+      message: 'No matching fixture found in our football data sources.',
     };
   }
 
@@ -227,6 +230,7 @@ export async function computeConfidenceScoreFromNames(
     awayTeamName: fixture.awayTeamName,
     market: input.market,
     leagueAvg: input.leagueAvg,
+    provider: fixture.provider,
   });
 
   if (outcome.status === 'insufficient_data') return outcome;

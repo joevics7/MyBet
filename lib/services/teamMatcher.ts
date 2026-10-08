@@ -6,7 +6,10 @@
 // date rather than trying to search by name directly (a much smaller,
 // much more reliable search space).
 //
-// IMPORTANT LIMITATION: football-data.org's free tier only covers 12
+// Providers: API-Football (1,000+ leagues incl. international) is tried
+// first when API_FOOTBALL_KEY is set, then football-data.org as a fallback.
+//
+// LIMITATION (football-data.org alone): its free tier only covers 12
 // major competitions (top European leagues, WC/EC). A large share of
 // what platforms like SportyBet/Bet9ja decode -- lower-division matches,
 // most international qualifiers outside WC/EC, South American leagues
@@ -16,7 +19,12 @@
 // or similar) eventually to raise coverage; this module doesn't attempt
 // that yet.
 
-import { fetchMatchesByDateRange, type FdMatch } from './footballData';
+import { fetchMatchesByDateRange as fdFetchRange, type FdMatch } from './footballData';
+import { fetchMatchesByDateRange as afFetchRange, isApiFootballConfigured } from './apiFootball';
+
+// Team IDs are NOT shared between providers, so a match always carries the
+// provider it came from, and form must be fetched from that same provider.
+export type FixtureProvider = 'apifootball' | 'footballdata';
 
 function normalizeTeamName(name: string): string {
   return name
@@ -57,6 +65,7 @@ function similarity(a: string, b: string): number {
 const PER_TEAM_THRESHOLD = 0.55;
 
 export interface MatchedFixture {
+  provider: FixtureProvider;
   matchId: number;
   homeTeamId: number;
   awayTeamId: number;
@@ -81,38 +90,45 @@ export async function findFixtureByTeamNames(
   const dateFrom = new Date(kickoffDate.getTime() - 86400000).toISOString().slice(0, 10);
   const dateTo = new Date(kickoffDate.getTime() + 86400000).toISOString().slice(0, 10);
 
-  let candidates: FdMatch[];
-  try {
-    candidates = await fetchMatchesByDateRange(dateFrom, dateTo);
-  } catch (err) {
-    console.error('[teamMatcher] fetchMatchesByDateRange failed:', err);
-    return null;
-  }
-
   const targetHome = normalizeTeamName(homeTeamName);
   const targetAway = normalizeTeamName(awayTeamName);
 
-  let best: { match: FdMatch; score: number } | null = null;
+  // API-Football first (wide coverage), then football-data.org as a fallback
+  // (e.g. API-Football quota exhausted, or fixture missing there).
+  const providers: { name: FixtureProvider; fetchRange: typeof fdFetchRange }[] = [];
+  if (isApiFootballConfigured()) providers.push({ name: 'apifootball', fetchRange: afFetchRange });
+  if (process.env.FOOTBALL_DATA_API_KEY) providers.push({ name: 'footballdata', fetchRange: fdFetchRange });
 
-  for (const match of candidates) {
-    const homeScore = similarity(targetHome, normalizeTeamName(match.homeTeam.name));
-    const awayScore = similarity(targetAway, normalizeTeamName(match.awayTeam.name));
+  for (const provider of providers) {
+    let candidates: FdMatch[];
+    try {
+      candidates = await provider.fetchRange(dateFrom, dateTo);
+    } catch (err) {
+      console.error(`[teamMatcher] ${provider.name} fetch failed:`, err);
+      continue;
+    }
 
-    if (homeScore < PER_TEAM_THRESHOLD || awayScore < PER_TEAM_THRESHOLD) continue;
+    let best: { match: FdMatch; score: number } | null = null;
+    for (const match of candidates) {
+      const homeScore = similarity(targetHome, normalizeTeamName(match.homeTeam.name));
+      const awayScore = similarity(targetAway, normalizeTeamName(match.awayTeam.name));
+      if (homeScore < PER_TEAM_THRESHOLD || awayScore < PER_TEAM_THRESHOLD) continue;
+      const combined = (homeScore + awayScore) / 2;
+      if (!best || combined > best.score) best = { match, score: combined };
+    }
 
-    const combined = (homeScore + awayScore) / 2;
-    if (!best || combined > best.score) best = { match, score: combined };
+    if (best) {
+      return {
+        provider: provider.name,
+        matchId: best.match.id,
+        homeTeamId: best.match.homeTeam.id,
+        awayTeamId: best.match.awayTeam.id,
+        homeTeamName: best.match.homeTeam.name,
+        awayTeamName: best.match.awayTeam.name,
+        competitionName: best.match.competition.name,
+        confidence: best.score,
+      };
+    }
   }
-
-  if (!best) return null;
-
-  return {
-    matchId: best.match.id,
-    homeTeamId: best.match.homeTeam.id,
-    awayTeamId: best.match.awayTeam.id,
-    homeTeamName: best.match.homeTeam.name,
-    awayTeamName: best.match.awayTeam.name,
-    competitionName: best.match.competition.name,
-    confidence: best.score,
-  };
+  return null;
 }
