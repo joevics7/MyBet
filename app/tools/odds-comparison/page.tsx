@@ -1,43 +1,41 @@
 import { Metadata } from 'next';
 import { ToolPageShell } from '@/components/tools/ToolPageShell';
-import { OddsCompareForm } from '@/components/tools/OddsCompareForm';
+import { OddsExplorer } from '@/components/tools/OddsExplorer';
 
 export const metadata: Metadata = {
   title: 'Odds Comparison',
-  description: 'Check bookmakers worldwide for a better price on the games you actually have.',
+  description: 'See the odds for any match across bookmakers worldwide, side by side.',
 };
 
 export default function Page() {
   return (
     <ToolPageShell
       title="Odds Comparison"
-      tagline="Check platforms for a better price on the games you actually have."
+      tagline="See a match's odds across bookmakers, side by side."
       status="live"
       howItWorks={
         <p>
-          Paste a booking code from any supported platform. For each pick we look up the same game and
-          market at other bookmakers and show the price on each, which one pays the most for the whole slip,
-          and whether the best price looks like good value. Prices are fetched on demand, nothing is stored.
+          Pick a day, tap a match, and see the odds each bookmaker offers for the result, total goals and both
+          teams to score. The best price in each column is highlighted. Odds are fetched on demand and nothing
+          is stored.
         </p>
       }
       faq={[
         {
-          question: 'Which platforms are compared?',
+          question: 'Which bookmakers are shown?',
           answer:
-            'Directly connected platforms (SportyBet, Football.com, MSport, Betway) plus hundreds of other bookmakers worldwide through an odds data provider. Coverage varies by match and market. Win/draw/win, over/under and both-teams-to-score picks are compared everywhere; other markets only on directly connected platforms.',
+            'Hundreds of bookmakers worldwide through an odds data provider, plus Betway Nigeria directly. Coverage varies by match, and not every bookmaker accepts customers in every country.',
         },
         {
-          question: 'Why does a pick show a dash?',
-          answer:
-            'That bookmaker does not offer the market, or it has closed. The best-slip total only counts bookmakers that can price every pick.',
+          question: 'Why is a price missing?',
+          answer: 'That bookmaker does not offer that market for the match, or it is currently suspended.',
         },
         {
-          question: 'What does the value tag mean?',
-          answer:
-            'It compares our model\'s chance for the pick with the best price available. Pinnacle is a low-margin bookmaker, so when the best price beats its line that is a stronger signal. Neither is a guarantee or betting advice.',
+          question: 'Can I place a bet here?',
+          answer: 'No. This page only compares prices. Open the bookmaker to bet, and check the odds there first.',
         },
       ]}
-      body={<OddsCompareForm />}
+      body={<OddsExplorer />}
     />
   );
 }

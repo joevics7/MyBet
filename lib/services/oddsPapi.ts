@@ -1,22 +1,17 @@
-// OddsPapi client (https://oddspapi.io/en/docs, API v4) -- a global bookmaker
-// odds aggregator. Used for (a) prices from hundreds of bookmakers we have no
-// direct adapter for and (b) a sharp reference price (Pinnacle).
+// OddsPapi client (https://oddspapi.io/en/docs, API v4): a global bookmaker
+// odds aggregator. Powers the Odds Comparison page: list matches for a date,
+// then show one match's odds across every bookmaker that prices it.
 //
 // Env: ODDSPAPI_API_KEY
 //
-// Matching: fixtures carry `externalProviders.betradarId` (the Sportradar
-// match ID), so a SportyBet-style "sr:match:N" maps to a fixture exactly;
-// otherwise we fall back to team-name + kickoff matching.
-//
-// Request cost (free tier is only ~250/month): per slip = fixtures list (1 per
-// distinct date, cached) + odds (1 per pick, cached) + markets/bookmakers
-// (cached 24h). Endpoint cooldowns: fixtures 2s, odds 0.5s, markets 1s.
-
-import { normalizeTeamName, similarity } from './teamMatcher';
+// Request cost (free tier is only ~250/month): one request per date list
+// (cached 30 min), one per match opened (cached 5 min), plus markets and
+// bookmaker names (cached 24h). Endpoint cooldowns: fixtures 2s, odds 0.5s,
+// markets/bookmakers 1s.
 
 const BASE = 'https://api.oddspapi.io/v4';
 const SOCCER_SPORT_ID = 10;
-const SHARP_SLUG = 'pinnacle';
+const OU_LINES = [1.5, 2.5, 3.5];
 
 export function isOddsPapiConfigured(): boolean {
   return !!process.env.ODDSPAPI_API_KEY;
@@ -30,18 +25,25 @@ const COOLDOWN_MS: Record<string, number> = { fixtures: 2000, odds: 500, markets
 const lastCall: Record<string, number> = {};
 const chain: Record<string, Promise<unknown>> = {};
 
-async function call<T>(endpoint: keyof typeof COOLDOWN_MS, params: Record<string, string>, retry = true): Promise<T> {
-  // Serialise calls per endpoint (parallel legs share one queue).
+async function call<T>(
+  endpoint: keyof typeof COOLDOWN_MS,
+  params: Record<string, string>,
+  revalidate: number,
+  retry = true,
+): Promise<T> {
   const run = async (): Promise<T> => {
     const wait = (lastCall[endpoint] ?? 0) + COOLDOWN_MS[endpoint] - Date.now();
     if (wait > 0) await sleep(wait);
     lastCall[endpoint] = Date.now();
 
     const qs = new URLSearchParams({ ...params, apiKey: process.env.ODDSPAPI_API_KEY ?? '' });
-    const res = await fetch(`${BASE}/${endpoint}?${qs.toString()}`, { signal: AbortSignal.timeout(10000) });
+    const res = await fetch(`${BASE}/${endpoint}?${qs.toString()}`, {
+      signal: AbortSignal.timeout(10000),
+      next: { revalidate }, // shared cache across visitors keeps quota use low
+    });
     if (res.status === 429 && retry) {
       await sleep(COOLDOWN_MS[endpoint] + 500);
-      return call<T>(endpoint, params, false);
+      return call<T>(endpoint, params, revalidate, false);
     }
     if (!res.ok) throw new Error(`OddsPapi ${endpoint} failed: ${res.status} ${(await res.text()).slice(0, 200)}`);
     return (await res.json()) as T;
@@ -52,7 +54,7 @@ async function call<T>(endpoint: keyof typeof COOLDOWN_MS, params: Record<string
   return next;
 }
 
-// ---- cached reference data ------------------------------------------------
+// ---- cached reference data ---------------------------------------------------
 
 interface MarketDef {
   marketId: number;
@@ -64,23 +66,23 @@ interface MarketDef {
   outcomes: { outcomeId: number; outcomeName: string }[];
 }
 
-let marketsCache: { at: number; data: MarketDef[] } | null = null;
 const DAY = 24 * 3600 * 1000;
+let marketsCache: { at: number; data: MarketDef[] } | null = null;
 
 async function getMarkets(): Promise<MarketDef[]> {
   if (marketsCache && Date.now() - marketsCache.at < DAY) return marketsCache.data;
-  const data = await call<MarketDef[]>('markets', { language: 'en' });
+  const data = await call<MarketDef[]>('markets', { language: 'en' }, 86400);
   marketsCache = { at: Date.now(), data };
   return data;
 }
 
-let bookmakerNames: { at: number; map: Record<string, string> } | null = null;
+let namesCache: { at: number; map: Record<string, string> } | null = null;
 
 async function getBookmakerNames(): Promise<Record<string, string>> {
-  if (bookmakerNames && Date.now() - bookmakerNames.at < DAY) return bookmakerNames.map;
+  if (namesCache && Date.now() - namesCache.at < DAY) return namesCache.map;
   const map: Record<string, string> = {};
   try {
-    const rows = await call<Json[]>('bookmakers', {});
+    const rows = await call<Json[]>('bookmakers', {}, 86400);
     for (const r of Array.isArray(rows) ? rows : []) {
       const slug = r.slug ?? r.bookmaker ?? r.bookmakerSlug;
       const name = r.bookmakerName ?? r.name ?? r.displayName;
@@ -89,158 +91,141 @@ async function getBookmakerNames(): Promise<Record<string, string>> {
   } catch (err) {
     console.error('[oddsPapi] bookmakers list failed (using slugs):', err);
   }
-  bookmakerNames = { at: Date.now(), map };
+  namesCache = { at: Date.now(), map };
   return map;
 }
 
 const prettify = (slug: string) => slug.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
-// ---- fixture lookup -------------------------------------------------------
+// ---- match list ----------------------------------------------------------------
 
-const fixtureCache = new Map<string, { at: number; data: Json[] }>();
+export interface MatchSummary {
+  fixtureId: string;
+  home: string;
+  away: string;
+  kickoff: string; // ISO
+  league: string;
+  country: string;
+}
 
-async function fixturesForDate(date: string): Promise<Json[]> {
-  const hit = fixtureCache.get(date);
-  if (hit && Date.now() - hit.at < 30 * 60 * 1000) return hit.data;
+export async function listMatches(date: string): Promise<MatchSummary[]> {
   const from = `${date}T00:00:00Z`;
   const to = new Date(Date.parse(from) + 24 * 3600 * 1000).toISOString().replace('.000Z', 'Z');
-  const data = await call<Json[]>('fixtures', {
-    sportId: String(SOCCER_SPORT_ID),
-    from,
-    to,
-    statusId: '0',
-    hasOdds: 'true',
-  });
-  const rows = Array.isArray(data) ? data : [];
-  fixtureCache.set(date, { at: Date.now(), data: rows });
-  return rows;
-}
-
-export interface LegRef {
-  externalEventId: string; // may be "sr:match:N"
-  homeTeam: string;
-  awayTeam: string;
-  kickoffAt: string | null;
-}
-
-async function findFixture(leg: LegRef): Promise<Json | null> {
-  if (!leg.kickoffAt) return null;
-  const kickoff = Date.parse(leg.kickoffAt);
-  if (Number.isNaN(kickoff)) return null;
-
-  // A fixture near midnight UTC can sit on the neighbouring date's list.
-  const dates = Array.from(
-    new Set([kickoff - 3 * 3600e3, kickoff + 3 * 3600e3].map((t) => new Date(t).toISOString().slice(0, 10))),
+  const rows = await call<Json[]>(
+    'fixtures',
+    { sportId: String(SOCCER_SPORT_ID), from, to, statusId: '0', hasOdds: 'true' },
+    1800,
   );
-  const lists = await Promise.all(dates.map(fixturesForDate));
-  const all = lists.flat();
-
-  const sr = leg.externalEventId.match(/^sr:match:(\d+)$/)?.[1];
-  if (sr) {
-    const exact = all.find((f) => String(f.externalProviders?.betradarId) === sr);
-    if (exact) return exact;
-  }
-
-  const h = normalizeTeamName(leg.homeTeam);
-  const a = normalizeTeamName(leg.awayTeam);
-  let best: { f: Json; score: number } | null = null;
-  for (const f of all) {
-    if (Math.abs(Date.parse(f.startTime) - kickoff) > 3 * 3600e3) continue;
-    const hs = similarity(h, normalizeTeamName(f.participant1Name ?? ''));
-    const as = similarity(a, normalizeTeamName(f.participant2Name ?? ''));
-    if (hs < 0.6 || as < 0.6) continue;
-    if (!best || hs + as > best.score) best = { f, score: hs + as };
-  }
-  return best?.f ?? null;
+  return (Array.isArray(rows) ? rows : [])
+    .map((f) => ({
+      fixtureId: String(f.fixtureId),
+      home: String(f.participant1Name ?? ''),
+      away: String(f.participant2Name ?? ''),
+      kickoff: new Date(f.startTime).toISOString(),
+      league: String(f.tournamentName ?? ''),
+      country: String(f.categoryName ?? ''),
+    }))
+    .filter((m) => m.home && m.away)
+    .sort((a, b) => a.kickoff.localeCompare(b.kickoff) || a.league.localeCompare(b.league));
 }
 
-// ---- market selection -----------------------------------------------------
+// ---- one match's odds ------------------------------------------------------------
 
-export type Pick =
-  | { type: '1X2'; pick: 'home' | 'draw' | 'away' }
-  | { type: 'OVER_UNDER'; pick: 'over' | 'under'; line: number }
-  | { type: 'BTTS'; pick: 'yes' | 'no' };
-
-// The market (all outcomes) and which outcome id is the user's pick.
-async function resolveMarket(pick: Pick): Promise<{ marketId: number; outcomeIds: number[]; pickId: number } | null> {
-  const markets = await getMarkets();
-  const soccer = markets.filter((m) => m.sportId === undefined || m.sportId === SOCCER_SPORT_ID);
-  if (pick.type === '1X2') {
-    const m = soccer.find((x) => x.marketType === '1x2' && x.period === 'fulltime' && x.outcomes.length === 3);
-    if (!m) return null;
-    const idx = { home: 0, draw: 1, away: 2 }[pick.pick];
-    return { marketId: m.marketId, outcomeIds: m.outcomes.map((o) => o.outcomeId), pickId: m.outcomes[idx].outcomeId };
-  }
-  if (pick.type === 'BTTS') {
-    const m = soccer.find((x) => /both teams to score/i.test(x.marketName) && x.period === 'fulltime' && x.outcomes.length === 2);
-    if (!m) return null;
-    const o = m.outcomes.find((x) => x.outcomeName.toLowerCase() === pick.pick);
-    return o ? { marketId: m.marketId, outcomeIds: m.outcomes.map((x) => x.outcomeId), pickId: o.outcomeId } : null;
-  }
-  const m = soccer.find(
-    (x) => /^over under full time$/i.test(x.marketName) && x.period === 'fulltime' && x.handicap === pick.line,
-  );
-  if (!m) return null;
-  const o = m.outcomes.find((x) => x.outcomeName.toLowerCase() === pick.pick);
-  return o ? { marketId: m.marketId, outcomeIds: m.outcomes.map((x) => x.outcomeId), pickId: o.outcomeId } : null;
+export interface OddsRow {
+  slug: string;
+  label: string;
+  prices: (number | null)[]; // one per outcome, same order as `outcomes`
 }
 
-// ---- public API -----------------------------------------------------------
-
-export interface OutsideQuotes {
-  prices: Record<string, number>; // bookmaker slug -> decimal price for the pick
-  labels: Record<string, string>;
-  sharpProb: number | null; // Pinnacle's no-margin probability for the pick
+export interface MarketTable {
+  key: string;
+  title: string;
+  outcomes: string[];
+  rows: OddsRow[];
+  best: (number | null)[]; // best price per outcome
 }
 
-const oddsCache = new Map<string, { at: number; data: Json }>();
+export interface MatchOdds {
+  match: MatchSummary;
+  markets: MarketTable[];
+}
 
-export async function lookupOutsideQuotes(leg: LegRef, pick: Pick): Promise<OutsideQuotes | { reason: string }> {
-  if (!isOddsPapiConfigured()) return { reason: 'Outside odds not configured' };
-  try {
-    const fixture = await findFixture(leg);
-    if (!fixture) return { reason: 'Match not found in outside odds' };
-    const market = await resolveMarket(pick);
-    if (!market) return { reason: 'Market not available in outside odds' };
+interface WantedMarket {
+  key: string;
+  title: string;
+  def: MarketDef;
+  outcomeLabels: string[];
+}
 
-    const key = String(fixture.fixtureId);
-    let odds = oddsCache.get(key);
-    if (!odds || Date.now() - odds.at > 5 * 60 * 1000) {
-      odds = { at: Date.now(), data: await call<Json>('odds', { fixtureId: key }) };
-      oddsCache.set(key, odds);
+async function wantedMarkets(): Promise<WantedMarket[]> {
+  const all = (await getMarkets()).filter((m) => m.sportId === undefined || m.sportId === SOCCER_SPORT_ID);
+  const out: WantedMarket[] = [];
+
+  const x2 = all.find((m) => m.marketType === '1x2' && m.period === 'fulltime' && m.outcomes.length === 3);
+  if (x2) out.push({ key: '1x2', title: 'Match result (1X2)', def: x2, outcomeLabels: ['Home', 'Draw', 'Away'] });
+
+  for (const line of OU_LINES) {
+    const m = all.find((x) => /^over under full time$/i.test(x.marketName) && x.period === 'fulltime' && x.handicap === line);
+    if (m && m.outcomes.length === 2) {
+      out.push({ key: `ou${line}`, title: `Total goals ${line}`, def: m, outcomeLabels: [`Over ${line}`, `Under ${line}`] });
     }
+  }
 
-    const names = await getBookmakerNames();
-    const prices: Record<string, number> = {};
-    const labels: Record<string, string> = {};
-    let sharpProb: number | null = null;
+  const btts = all.find((x) => /both teams to score/i.test(x.marketName) && x.period === 'fulltime' && x.outcomes.length === 2);
+  if (btts) out.push({ key: 'btts', title: 'Both teams to score', def: btts, outcomeLabels: ['Yes', 'No'] });
+  return out;
+}
 
-    for (const [slug, bm] of Object.entries<Json>(odds.data.bookmakerOdds ?? {})) {
+export async function getMatchOdds(fixtureId: string): Promise<MatchOdds | null> {
+  const [data, wanted, names] = await Promise.all([
+    call<Json>('odds', { fixtureId }, 300),
+    wantedMarkets(),
+    getBookmakerNames(),
+  ]);
+  if (!data?.fixtureId) return null;
+
+  const match: MatchSummary = {
+    fixtureId: String(data.fixtureId),
+    home: String(data.participant1Name ?? ''),
+    away: String(data.participant2Name ?? ''),
+    kickoff: data.startTime ? new Date(data.startTime).toISOString() : '',
+    league: String(data.tournamentName ?? ''),
+    country: String(data.categoryName ?? ''),
+  };
+
+  const markets: MarketTable[] = [];
+  for (const w of wanted) {
+    const rows: OddsRow[] = [];
+    for (const [slug, bm] of Object.entries<Json>(data.bookmakerOdds ?? {})) {
       if (bm.bookmakerIsActive === false || bm.suspended === true) continue;
-      const mk = bm.markets?.[String(market.marketId)];
+      const mk = bm.markets?.[String(w.def.marketId)];
       if (!mk || mk.marketActive === false) continue;
-
-      const priceOf = (oid: number): number | null => {
-        const p = mk.outcomes?.[String(oid)]?.players?.['0'];
+      const prices = w.def.outcomes.map((o) => {
+        const p = mk.outcomes?.[String(o.outcomeId)]?.players?.['0'];
         return p && p.active !== false && Number.isFinite(p.price) && p.price > 1 ? Number(p.price) : null;
-      };
-      const price = priceOf(market.pickId);
-      if (price === null) continue;
-      prices[slug] = price;
-      labels[slug] = names[slug] ?? prettify(slug);
-
-      if (slug === SHARP_SLUG) {
-        const all = market.outcomeIds.map(priceOf);
-        if (all.every((x): x is number => x !== null)) {
-          const inv = all.map((x) => 1 / x);
-          sharpProb = 1 / price / inv.reduce((a, b) => a + b, 0); // remove the bookmaker margin
-        }
-      }
+      });
+      if (prices.every((x) => x === null)) continue;
+      rows.push({ slug, label: names[slug] ?? prettify(slug), prices });
     }
-    if (Object.keys(prices).length === 0) return { reason: 'No outside prices for this pick' };
-    return { prices, labels, sharpProb };
-  } catch (err) {
-    console.error('[oddsPapi] lookup failed:', err);
-    return { reason: 'Outside odds lookup failed' };
+    if (rows.length) markets.push({ key: w.key, title: w.title, outcomes: w.outcomeLabels, rows, best: [] });
   }
+  return { match, markets };
+}
+
+// Sort rows by bookmaker margin (lowest first = fairest prices), then mark best prices.
+export function finishTables(markets: MarketTable[]): MarketTable[] {
+  const margin = (r: OddsRow) =>
+    r.prices.every((p) => p !== null) ? r.prices.reduce<number>((a, p) => a + 1 / (p as number), 0) : Infinity;
+  for (const m of markets) {
+    m.rows.sort((a, b) => {
+      const ma = margin(a);
+      const mb = margin(b);
+      return ma === mb ? 0 : ma < mb ? -1 : 1; // plain compare: Infinity - Infinity is NaN
+    });
+    m.best = m.outcomes.map((_, i) => {
+      const vals = m.rows.map((r) => r.prices[i]).filter((p): p is number => p !== null);
+      return vals.length ? Math.max(...vals) : null;
+    });
+  }
+  return markets;
 }

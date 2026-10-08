@@ -1,17 +1,15 @@
-// Betway price lookup by browsing, for picks that came from another platform.
+// Betway NG prices for one match, for the Odds Comparison page.
 //
-// Betway uses its own IDs, so a pick is matched by team names + kickoff:
-//   1. page Betway's upcoming football events and find the game
-//   2. read that event's "Main" markets and find 1X2 / Over-Under
-//   3. return the live price (and the outcome ID, which BookABet accepts)
+// Betway uses its own event IDs, so the match is found by team names +
+// kickoff: page Betway's upcoming football events, match the game, then read
+// that event's "Main" markets (1X2 and Over/Under) in a single call.
 //
 // Endpoints/shapes come from the public repo Slipcheck-Demo/backend
 // (docs/betway-api.md, src/betway/*), documented from live tests.
 // Not yet run from our own server. BTTS is not in the "Main" group, so it
-// isn't matched here (reported as "Market not matched").
+// isn't included.
 
 import { normalizeTeamName, similarity } from './teamMatcher';
-import type { Pick } from './oddsPapi';
 
 const FEEDS = 'https://www.betway.com.ng/appsynapse/feeds-roa2';
 const CONFIG = 'https://www.betway.com.ng/appsynapse/config';
@@ -97,19 +95,16 @@ async function findEvent(home: string, away: string, kickoffAt: string | null): 
 
 // ---- market reading --------------------------------------------------------
 
-export interface BetwayPrice {
-  odds: number;
-  outcomeId: string;
-}
+// Keys match the market keys used by oddsPapi.ts (1x2, ou1.5, ou2.5, ou3.5).
+export type BetwayPrices = Record<string, (number | null)[]>;
 
-export async function lookupBetwayPrice(
-  leg: { homeTeam: string; awayTeam: string; kickoffAt: string | null },
-  pick: Pick,
-): Promise<BetwayPrice | { reason: string }> {
-  if (pick.type === 'BTTS') return { reason: 'Market not matched' };
-
-  const event = await findEvent(leg.homeTeam, leg.awayTeam, leg.kickoffAt);
-  if (!event) return { reason: 'Match not found' };
+export async function getBetwayMatchPrices(
+  home: string,
+  away: string,
+  kickoffAt: string,
+): Promise<BetwayPrices | null> {
+  const event = await findEvent(home, away, kickoffAt);
+  if (!event) return null;
 
   const qs = new URLSearchParams({
     eventId: String(event.eventId),
@@ -124,7 +119,7 @@ export async function lookupBetwayPrice(
   const body = await getJson<{ marketsInGroup?: Json[]; outcomes?: Json[]; prices?: Json[] }>(
     `${FEEDS}/MarketGroupings/MarketGroupNamesAndMarketsForEvent?${qs}`,
   );
-  if (!body?.marketsInGroup || !body.outcomes) return { reason: 'Lookup failed' };
+  if (!body?.marketsInGroup || !body.outcomes) return null;
 
   const priceById = new Map((body.prices ?? []).map((p) => [String(p.outcomeId), Number(p.priceDecimal)]));
   // Lines arrive as squashed parent/child pairs: outcomes point at the child via originalMarketId.
@@ -132,29 +127,27 @@ export async function lookupBetwayPrice(
     body.outcomes!.filter((o) => String(o.originalMarketId ?? o.marketId) === String(m.marketId));
   const live = (m: Json) => m.isActive !== false && m.isSuspended !== true && !m.isSquashedParent;
   const nameOf = (m: Json) => String(m.displayName ?? m.name ?? '');
-
-  const finish = (o: Json | undefined): BetwayPrice | { reason: string } => {
-    const odds = o ? priceById.get(String(o.outcomeId)) : undefined;
-    if (!o || o.isTradingActive === false || !odds || !Number.isFinite(odds)) return { reason: 'Not offered' };
-    return { odds, outcomeId: String(o.outcomeId) };
+  const priceOf = (o: Json | undefined): number | null => {
+    const p = o && o.isTradingActive !== false ? priceById.get(String(o.outcomeId)) : undefined;
+    return p && Number.isFinite(p) ? p : null;
   };
 
-  if (pick.type === '1X2') {
-    const m = body.marketsInGroup.find((x) => live(x) && /^(1x2|win\/draw\/win|match result)$/i.test(nameOf(x).trim()));
-    if (!m) return { reason: 'Market not matched' };
-    const outs = outcomesOf(m).sort((x, y) => Number(x.index) - Number(y.index));
-    if (outs.length !== 3 || !/draw/i.test(String(outs[1].name))) return { reason: 'Market not matched' };
-    return finish(outs[{ home: 0, draw: 1, away: 2 }[pick.pick]]);
+  const result: BetwayPrices = {};
+
+  const x2 = body.marketsInGroup.find((m) => live(m) && /^(1x2|win\/draw\/win|match result)$/i.test(nameOf(m).trim()));
+  if (x2) {
+    const outs = outcomesOf(x2).sort((a, b) => Number(a.index) - Number(b.index));
+    if (outs.length === 3 && /draw/i.test(String(outs[1].name))) result['1x2'] = outs.map(priceOf);
   }
 
-  // Over/Under: market name or outcome sbv carries the line, e.g. "Total (2.5)".
-  const target = String(pick.line);
-  const m = body.marketsInGroup.find((x) => {
-    if (!live(x) || !/total/i.test(nameOf(x)) || /(home|away|team|half|corner|card)/i.test(nameOf(x))) return false;
-    const line = nameOf(x).match(/\(([\d.]+)\)/)?.[1] ?? outcomesOf(x)[0]?.sbv?.match(/[\d.]+/)?.[0];
-    return line === target;
-  });
-  if (!m) return { reason: 'Market not matched' };
-  const o = outcomesOf(m).find((x) => String(x.name).trim().toLowerCase().startsWith(pick.pick));
-  return finish(o);
+  for (const m of body.marketsInGroup) {
+    if (!live(m) || !/total/i.test(nameOf(m)) || /(home|away|team|half|corner|card)/i.test(nameOf(m))) continue;
+    const outs = outcomesOf(m);
+    const line = nameOf(m).match(/\(([\d.]+)\)/)?.[1] ?? outs[0]?.sbv?.match(/[\d.]+/)?.[0];
+    if (!line || !['1.5', '2.5', '3.5'].includes(line)) continue;
+    const pick = (word: string) => outs.find((o) => String(o.name).trim().toLowerCase().startsWith(word));
+    result[`ou${line}`] = [priceOf(pick('over')), priceOf(pick('under'))];
+  }
+
+  return Object.keys(result).length ? result : null;
 }
