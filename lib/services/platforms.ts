@@ -16,6 +16,7 @@ import {
 } from './sportybet';
 import { decodeBet9jaCode } from './bet9ja';
 import { decodeBangbetCode } from './bangbet';
+import { decodeStakeBet } from './stake';
 
 export interface PlatformAdapter {
   slug: string;
@@ -80,6 +81,9 @@ export const PLATFORMS: PlatformAdapter[] = [
     verified: false,
     deepLink: 'https://www.bangbet.com/static/share/book.html?{code}',
   },
+  // Decode only. Input is a share link or bet ID ("sport:12345678"), not a
+  // booking code. No create path exists. Lookup query unverified.
+  { slug: 'stake', label: 'Stake', decode: decodeStakeBet, canSettle: false, verified: false },
   // Decode-only; known to fail from our server (geo/bot protection). Parked.
   { slug: 'bet9ja', label: 'Bet9ja', decode: decodeBet9jaCode, canSettle: false, verified: false },
 ];
