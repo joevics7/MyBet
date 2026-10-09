@@ -1,5 +1,5 @@
 import { fetchStatareaPredictions } from '@/lib/services/statarea';
-import { fetchPredictzPredictions } from '@/lib/services/predictz';
+import { fetchPredictzWithRaw } from '@/lib/services/predictz';
 import { fetchForebetRawText } from '@/lib/services/forebet';
 
 // Diagnostic page, not a product feature -- not linked from nav. Statarea
@@ -41,14 +41,15 @@ function RawTextSection({
 export default async function ScrapeStatusPage() {
   const [statareaResult, predictzResult, forebetResult] = await Promise.allSettled([
     fetchStatareaPredictions(),
-    fetchPredictzPredictions(),
+    fetchPredictzWithRaw(),
     fetchForebetRawText(),
   ]);
 
   const statarea = statareaResult.status === 'fulfilled' ? statareaResult.value : [];
   const statareaError = statareaResult.status === 'rejected' ? String(statareaResult.reason) : null;
 
-  const predictz = predictzResult.status === 'fulfilled' ? predictzResult.value : [];
+  const predictz = predictzResult.status === 'fulfilled' ? predictzResult.value.predictions : [];
+  const predictzRawText = predictzResult.status === 'fulfilled' ? predictzResult.value.rawText : null;
   const predictzError = predictzResult.status === 'rejected' ? String(predictzResult.reason) : null;
 
   const forebetText = forebetResult.status === 'fulfilled' ? forebetResult.value : null;
@@ -90,8 +91,9 @@ export default async function ScrapeStatusPage() {
         <div className="space-y-1.5 max-h-[600px] overflow-auto border border-border rounded-sm p-3 bg-card">
           {predictz.length === 0 && !predictzError && (
             <p className="text-muted-foreground">
-              Fetched successfully but parsed 0 predictions -- the pattern likely needs re-checking
-              against the current page layout.
+              Fetched successfully but parsed 0 predictions -- see the raw text below to tell
+              whether the real page came back (pattern needs fixing) or something else did
+              (credits/blocking -- check for an error message rather than real content below).
             </p>
           )}
           {predictz.map((p, i) => (
@@ -104,6 +106,7 @@ export default async function ScrapeStatusPage() {
         </div>
       </section>
 
+      <RawTextSection title="Predictz (raw)" text={predictzRawText} error={predictzError} />
       <RawTextSection title="Forebet" text={forebetText} error={forebetError} />
     </div>
   );

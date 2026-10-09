@@ -41,19 +41,7 @@ function buildPredictzUrl(daysAhead: number): string {
   return `https://www.predictz.com/predictions/${yyyymmdd}/`;
 }
 
-// Raw, unparsed text -- kept for the diagnostic page / re-verifying the
-// pattern still holds if Predictz changes its layout later.
-export async function fetchPredictzRawText(daysAhead = 0): Promise<string | null> {
-  return fetchAndStripViaZenRows(buildPredictzUrl(daysAhead), { jsRender: true, premiumProxy: true });
-}
-
-export async function fetchPredictzPredictions(daysAhead = 0): Promise<PredictzPrediction[]> {
-  const text = await fetchPredictzRawText(daysAhead);
-  if (!text) {
-    console.error('[predictz] fetch failed');
-    return [];
-  }
-
+function parsePredictzText(text: string): PredictzPrediction[] {
   const scorePreds: { home: number; away: number }[] = [];
   SCORE_PATTERN.lastIndex = 0;
   let m: RegExpExecArray | null;
@@ -97,5 +85,30 @@ export async function fetchPredictzPredictions(daysAhead = 0): Promise<PredictzP
   }
 
   return predictions;
+}
+
+// Fetches ONCE and returns both the raw text and the parsed result --
+// the diagnostic page uses this so it can show both for debugging
+// without burning a second ZenRows request (not free, and credits are a
+// real constraint on the free tier -- a 0-result day is ambiguous
+// between "genuinely no matches" and "ZenRows returned something other
+// than the real page," and raw text is the only way to tell them apart).
+export async function fetchPredictzWithRaw(daysAhead = 0): Promise<{ rawText: string | null; predictions: PredictzPrediction[] }> {
+  const rawText = await fetchAndStripViaZenRows(buildPredictzUrl(daysAhead), { jsRender: true, premiumProxy: true });
+  if (!rawText) {
+    console.error('[predictz] fetch failed -- ZenRows returned nothing (check credits/API key/Vercel logs for the specific error)');
+    return { rawText: null, predictions: [] };
+  }
+  return { rawText, predictions: parsePredictzText(rawText) };
+}
+
+// Thin wrappers for callers that only need one or the other (production
+// scoring path doesn't need the raw text kept around).
+export async function fetchPredictzRawText(daysAhead = 0): Promise<string | null> {
+  return (await fetchPredictzWithRaw(daysAhead)).rawText;
+}
+
+export async function fetchPredictzPredictions(daysAhead = 0): Promise<PredictzPrediction[]> {
+  return (await fetchPredictzWithRaw(daysAhead)).predictions;
 }
 
