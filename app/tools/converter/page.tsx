@@ -17,7 +17,8 @@ export default function Page() {
         <p>
           Paste a code, choose where it came from and where you want it. Each pick is matched to the same game and
           market on the target platform, and you get a new booking code to load there. The Smart Filter can first
-          remove games that have already started and picks below a confidence level. Anything that can't be matched is
+          remove games that have already started, and every pick is shown with its confidence score so you can spot
+          the risky ones. Anything that can't be matched is
           listed with the reason, and the rest still converts.
         </p>
       }

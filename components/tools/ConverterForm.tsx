@@ -5,19 +5,19 @@ import { ArrowRight, CheckCircle2, Copy, ExternalLink, Loader2, MinusCircle, XCi
 import { CONVERT_TARGETS, PLATFORM_OPTIONS } from '@/lib/platformList';
 import type { ConvertResult } from '@/lib/converter/convert';
 
-const FILTERS = [
-  { value: '', label: 'Off' },
-  { value: '40', label: '40%+' },
-  { value: '50', label: '50%+' },
-  { value: '60', label: '60%+' },
-];
+// Same bands the Decoder uses for the BetMeter Score.
+function scoreTone(score: number | null): string {
+  if (score === null) return 'text-muted-foreground';
+  if (score >= 70) return 'border-[hsl(var(--verified))] text-[hsl(var(--verified))]';
+  if (score >= 40) return 'border-amber-600 text-amber-600';
+  return 'border-red-600 text-red-600';
+}
 
 export function ConverterForm() {
   const [source, setSource] = useState('sportybet');
   const [target, setTarget] = useState('betway');
   const [code, setCode] = useState('');
   const [dropStarted, setDropStarted] = useState(true);
-  const [minScore, setMinScore] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ConvertResult | null>(null);
@@ -35,7 +35,7 @@ export function ConverterForm() {
       const res = await fetch('/api/convert', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source, target, code: code.trim(), dropStarted, minScore: minScore ? Number(minScore) : null }),
+        body: JSON.stringify({ source, target, code: code.trim(), dropStarted }),
       });
       const data = await res.json();
       if (data.status === 'ok') setResult(data);
@@ -94,22 +94,10 @@ export function ConverterForm() {
           />
         </div>
 
-        <fieldset className="rounded-sm border border-border p-3 space-y-3">
-          <legend className={`px-1 ${label}`}>Smart filter</legend>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={dropStarted} onChange={(e) => setDropStarted(e.target.checked)} />
-            Remove games that have already started
-          </label>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-sm">Remove picks below this confidence</span>
-            <select value={minScore} onChange={(e) => setMinScore(e.target.value)} className="rounded-sm border border-border bg-background px-2 py-1 text-sm">
-              {FILTERS.map((f) => (
-                <option key={f.value} value={f.value}>{f.label}</option>
-              ))}
-            </select>
-          </div>
-          {minScore && <p className="text-[11px] text-muted-foreground">Picks we can't score are kept. Scoring adds a few seconds.</p>}
-        </fieldset>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={dropStarted} onChange={(e) => setDropStarted(e.target.checked)} />
+          Remove games that have already started
+        </label>
 
         {same && <p className="text-xs text-red-600">Choose two different platforms.</p>}
         <button
@@ -153,6 +141,12 @@ export function ConverterForm() {
             </div>
           )}
 
+          {result.legs.some((l) => l.score !== null) && (
+            <p className="text-[11px] text-muted-foreground">
+              Confidence is our own BetMeter Score (0 to 100): green is strong, amber is moderate, red is risky. Picks marked "Not scored" are outside our football data.
+            </p>
+          )}
+
           {result.convertedCount < result.totalLegs && result.newCode && (
             <p className="text-xs text-muted-foreground">
               This code has fewer picks than the original. Check the list below before you bet.
@@ -173,6 +167,13 @@ export function ConverterForm() {
                   <p className="truncate text-sm font-medium">{l.homeTeam} v {l.awayTeam}</p>
                   <p className="text-xs text-muted-foreground">{l.market}</p>
                   {l.reason && <p className="mt-0.5 text-xs text-muted-foreground">{l.reason}</p>}
+                  {l.status !== 'dropped' && (
+                    <p className="mt-1.5">
+                      <span className={`rounded-sm border px-1.5 py-0.5 text-[10px] font-mono uppercase ${scoreTone(l.score)}`}>
+                        {l.score !== null ? `Confidence ${l.score}` : 'Not scored'}
+                      </span>
+                    </p>
+                  )}
                 </div>
                 <div className="shrink-0 text-right font-mono text-xs">
                   <p>{l.sourceOdds.toFixed(2)}</p>
@@ -181,7 +182,6 @@ export function ConverterForm() {
                       → {l.targetOdds.toFixed(2)}
                     </p>
                   )}
-                  {l.score !== null && <p className="text-muted-foreground">{l.score}%</p>}
                 </div>
               </li>
             ))}

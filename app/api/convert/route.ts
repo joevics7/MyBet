@@ -8,7 +8,6 @@ interface Body {
   target?: string;
   code?: string;
   dropStarted?: boolean;
-  minScore?: number | null;
 }
 
 export async function POST(request: Request) {
@@ -24,10 +23,8 @@ export async function POST(request: Request) {
   if (!source || !target || !code) {
     return NextResponse.json({ error: 'source, target and code are required' }, { status: 400 });
   }
-  const minScore = typeof body.minScore === 'number' && body.minScore >= 20 && body.minScore <= 90 ? Math.round(body.minScore) : null;
-
   try {
-    const result = await convertSlip({ sourceSlug: source, targetSlug: target, code, dropStarted: body.dropStarted !== false, minScore });
+    const result = await convertSlip({ sourceSlug: source, targetSlug: target, code, dropStarted: body.dropStarted !== false });
     return NextResponse.json(result);
   } catch (err) {
     console.error('[convert]', err);

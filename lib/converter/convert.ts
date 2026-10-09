@@ -5,8 +5,9 @@
 //
 // Smart filter (before converting):
 //   - drop games that have already started (on by default)
-//   - optionally drop picks our model scores below a confidence threshold
-//     (picks we can't score are kept, not guessed about)
+// Confidence is shown, not filtered on: every pick that can be scored gets its
+// BetMeter Score so the user can see which picks are strong and which are risky
+// and decide for themselves. Picks we can't score are left unscored, never guessed.
 // Anything that can't be converted is listed with a reason; the rest still
 // converts, so one unsupported pick never blocks the slip.
 
@@ -19,14 +20,12 @@ import { resolveForBetway, resolveForSportyFamily, type Resolution } from './res
 
 export const MAX_LEGS = 20;
 const FAMILY = new Set(['sportybet', 'footballcom', 'msport']); // shared Sportradar ids
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export interface ConvertOptions {
   sourceSlug: string;
   targetSlug: string;
   code: string;
   dropStarted: boolean;
-  minScore: number | null; // % confidence; null = no confidence filter
 }
 
 export type LegStatus = 'converted' | 'dropped' | 'failed';
@@ -68,7 +67,6 @@ const defaultScorer: Scorer = async (sel, selector) => {
       kickoffAt: sel.kickoffAt,
       market: selector,
     });
-    await sleep(150);
     return out.status === 'ok' ? out.result.score : null;
   } catch (err) {
     console.error('[converter] scoring failed, leaving unscored:', sel.homeTeam, err);
@@ -137,16 +135,15 @@ export async function convertSlip(opts: ConvertOptions, scorer: Scorer = default
       reports[i].reason = 'Already started';
       continue;
     }
-    if (opts.minScore !== null && selectors[i]) {
-      const score = await scorer(sels[i], selectors[i]!);
-      reports[i].score = score;
-      if (score !== null && score < opts.minScore) {
-        reports[i].status = 'dropped';
-        reports[i].reason = `Confidence ${score}% is below your ${opts.minScore}% filter`;
-        continue;
-      }
-    }
     live.push(i);
+  }
+
+  // ---- 1b. confidence (shown on every scoreable pick) ----------------------------
+  const scoreable = live.filter((i) => selectors[i]);
+  for (let k = 0; k < scoreable.length; k += 3) {
+    const batch = scoreable.slice(k, k + 3);
+    const scores = await Promise.all(batch.map((i) => scorer(sels[i], selectors[i]!)));
+    batch.forEach((i, n) => (reports[i].score = scores[n]));
   }
 
   // ---- 2. find each pick on the target -------------------------------------------
