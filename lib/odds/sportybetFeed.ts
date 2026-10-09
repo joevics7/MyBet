@@ -99,49 +99,67 @@ export function parseMarkets(markets: Json[] | undefined): OddsByMarket {
   return odds;
 }
 
-function flatten(json: Json, fromMs: number, toMs: number): FeedMatch[] {
-  const out: FeedMatch[] = [];
+// An event exactly as the feed returns it (markets keep their real ids), plus
+// its tournament. The Converter needs the real ids; the odds board only odds.
+export interface RawEvent {
+  tournamentName: string;
+  categoryName: string;
+  event: Json;
+}
+
+function collectRaw(json: Json, fromMs: number, toMs: number): RawEvent[] {
+  const out: RawEvent[] = [];
   for (const t of json.data?.tournaments ?? []) {
     for (const e of t.events ?? []) {
       const start = Number(e.estimateStartTime);
       if (!Number.isFinite(start) || start < fromMs || start >= toMs) continue;
       if (!e.homeTeamName || !e.awayTeamName) continue;
-      const odds = parseMarkets(e.markets);
-      if (Object.keys(odds).length === 0) continue;
-      out.push({
-        srId: typeof e.eventId === 'string' && e.eventId.startsWith('sr:match:') ? e.eventId : null,
-        home: String(e.homeTeamName),
-        away: String(e.awayTeamName),
-        kickoff: new Date(start).toISOString(),
-        league: String(t.name ?? ''),
-        country: String(t.categoryName ?? ''),
-        odds,
-      });
+      out.push({ tournamentName: String(t.name ?? ''), categoryName: String(t.categoryName ?? ''), event: e });
     }
   }
   return out;
 }
 
-export async function fetchFamilyFeed(cfg: FamilyConfig, fromMs: number, toMs: number): Promise<FeedMatch[]> {
+function toFeedMatch(r: RawEvent): FeedMatch | null {
+  const e = r.event;
+  const odds = parseMarkets(e.markets);
+  if (Object.keys(odds).length === 0) return null;
+  return {
+    srId: typeof e.eventId === 'string' && e.eventId.startsWith('sr:match:') ? e.eventId : null,
+    home: String(e.homeTeamName),
+    away: String(e.awayTeamName),
+    kickoff: new Date(Number(e.estimateStartTime)).toISOString(),
+    league: r.tournamentName,
+    country: r.categoryName,
+    odds,
+  };
+}
+
+export async function fetchRawEvents(cfg: FamilyConfig, fromMs: number, toMs: number): Promise<RawEvent[]> {
   const timeline = Math.min(720, Math.max(1, Math.ceil((toMs - Date.now()) / 3600000)));
   const first = await getPage(cfg, 1, timeline);
   const total = Number(first.data?.totalNum) || 0;
   const pages = Math.min(MAX_PAGES, Math.max(1, Math.ceil(total / PAGE_SIZE)));
 
-  const all = flatten(first, fromMs, toMs);
+  const all = collectRaw(first, fromMs, toMs);
   const rest = Array.from({ length: pages - 1 }, (_, i) => i + 2);
   for (let i = 0; i < rest.length; i += CONCURRENCY) {
     const batch = rest.slice(i, i + CONCURRENCY);
     const results = await Promise.allSettled(batch.map((p) => getPage(cfg, p, timeline)));
-    for (const r of results) if (r.status === 'fulfilled') all.push(...flatten(r.value, fromMs, toMs));
+    for (const r of results) if (r.status === 'fulfilled') all.push(...collectRaw(r.value, fromMs, toMs));
     await sleep(250); // be polite
   }
 
   const seen = new Set<string>();
-  return all.filter((m) => {
-    const k = m.srId ?? `${m.home}|${m.away}|${m.kickoff}`;
+  return all.filter((r) => {
+    const k = String(r.event.eventId);
     if (seen.has(k)) return false;
     seen.add(k);
     return true;
   });
+}
+
+export async function fetchFamilyFeed(cfg: FamilyConfig, fromMs: number, toMs: number): Promise<FeedMatch[]> {
+  const raw = await fetchRawEvents(cfg, fromMs, toMs);
+  return raw.map(toFeedMatch).filter((m): m is FeedMatch => m !== null);
 }

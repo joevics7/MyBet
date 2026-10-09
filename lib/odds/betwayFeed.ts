@@ -7,14 +7,14 @@
 
 import { num, sleep, type FeedMatch } from './types';
 
-const FEEDS = 'https://www.betway.com.ng/appsynapse/feeds-roa2';
+export const FEEDS = 'https://www.betway.com.ng/appsynapse/feeds-roa2';
 const CONFIG = 'https://www.betway.com.ng/appsynapse/config';
 const TAKE = 20;
 const MAX_PAGES = 24;
 const CONCURRENCY = 4;
 type Json = Record<string, any>;
 
-async function getJson<T>(url: string): Promise<T> {
+export async function getJson<T>(url: string): Promise<T> {
   for (let attempt = 0; attempt < 3; attempt++) {
     const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000), cache: 'no-store' });
     if (res.status === 429 || res.status === 400) {
@@ -31,14 +31,14 @@ async function getJson<T>(url: string): Promise<T> {
   throw new Error('Betway rate limited');
 }
 
-async function soccerSportId(): Promise<string> {
+export async function soccerSportId(): Promise<string> {
   const body = await getJson<{ sports: Json[] }>(`${CONFIG}/cron/sports/NG/en-US`);
   const s = body.sports?.find((x) => x.sportType === 'Sport' && /^(soccer|football)$/i.test(String(x.name)));
   if (!s) throw new Error('Betway: football sport id not found');
   return String(s.sportId);
 }
 
-async function page(sportId: string, n: number): Promise<{ events: Json[]; markets: Json[]; outcomes: Json[]; prices: Json[]; isFinalPage?: boolean }> {
+export async function page(sportId: string, n: number): Promise<{ events: Json[]; markets: Json[]; outcomes: Json[]; prices: Json[]; isFinalPage?: boolean }> {
   const qs = new URLSearchParams({
     countryCode: 'NG',
     sportId,

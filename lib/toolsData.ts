@@ -26,7 +26,7 @@ export const TOOLS_CATALOG: ToolEntry[] = [
     shortTitle: 'Converter',
     tagline: 'Move a slip from one platform to another without losing selections.',
     href: '/tools/converter',
-    status: 'soon',
+    status: 'live',
   },
   {
     slug: 'splitter',

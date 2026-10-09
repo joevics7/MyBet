@@ -9,3 +9,12 @@ export const PLATFORM_OPTIONS = [
   { slug: 'stake', label: 'Stake (link or bet ID)' },
   { slug: 'bet9ja', label: 'Bet9ja' },
 ] as const;
+
+// Platforms we can CREATE a new booking code on (the Converter's targets).
+// Keep in sync with the adapters that define `encode` in lib/services/platforms.ts.
+export const CONVERT_TARGETS = [
+  { slug: 'sportybet', label: 'SportyBet' },
+  { slug: 'footballcom', label: 'Football.com' },
+  { slug: 'msport', label: 'MSport' },
+  { slug: 'betway', label: 'Betway' },
+] as const;
