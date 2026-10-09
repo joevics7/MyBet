@@ -111,31 +111,17 @@ export async function POST(req: NextRequest) {
   // entire prediction pages from scratch), risking a Vercel timeout on
   // anything but a single-selection code.
   // Every distinct date present in the slip -- a code can bundle
-  // selections across several days, and each needs its own Statarea
-  // fetch (scoping to only one date silently loses matches for the
-  // others, which happened in production before this fix).
+  // selections across several days, and each needs to be checked against
+  // the cache separately (scoping to only one date silently loses
+  // matches for the others, which happened in production before this
+  // was fixed).
   const kickoffDates = Array.from(
     new Set(result.selections.map((s) => s.kickoffAt?.slice(0, 10)).filter((d): d is string => !!d)),
   );
 
-  // Predictz only has 3 fetchable windows (today/tomorrow/one later
-  // date), not arbitrary per-date fetches -- convert each distinct
-  // kickoff date into a days-ahead offset (0/1/2+), capped at 2 since
-  // that's as far out as Predictz's URLs go.
-  const todayMs = new Date().setHours(0, 0, 0, 0);
-  const predictzDaysAhead = Array.from(
-    new Set(
-      kickoffDates.map((d) => {
-        const diffDays = Math.round((new Date(d).setHours(0, 0, 0, 0) - todayMs) / 86400000);
-        return Math.max(0, Math.min(2, diffDays));
-      }),
-    ),
-  );
-  if (predictzDaysAhead.length === 0) predictzDaysAhead.push(0);
-
   let tipsterSourceData;
   try {
-    tipsterSourceData = await fetchTipsterSources(kickoffDates, predictzDaysAhead);
+    tipsterSourceData = await fetchTipsterSources(kickoffDates);
   } catch (err) {
     console.error('[decode] fetchTipsterSources failed entirely:', err);
     tipsterSourceData = { statarea: [], predictz: [] };

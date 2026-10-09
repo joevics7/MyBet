@@ -15,11 +15,12 @@
 // single-selection code.
 
 import type { MarketSelector } from './confidenceEngine';
-import { fetchStatareaPredictions, type StatareaPrediction } from './statarea';
+import type { StatareaPrediction } from './statarea';
 import { findStatareaMatch } from './statareaMatcher';
-import { fetchPredictzPredictions, type PredictzPrediction } from './predictz';
+import type { PredictzPrediction } from './predictz';
 import { findPredictzMatch } from './predictzMatcher';
 import { deriveMarketFromScore } from './scoreToMarkets';
+import { getCachedTipsterSources } from './tipsterCache';
 
 export interface TipsterConsensusResult {
   score: number | null; // 0-100, averaged across matched sources; null if none matched
@@ -33,31 +34,17 @@ export interface TipsterSourceData {
 
 // Call ONCE per decode request (or per Predictor batch run), before
 // scoring any individual selections -- pass every DISTINCT kickoff date
-// present across all selections, not just one. A slip spanning multiple
-// days (common) needs Statarea fetched once per distinct date; scoping
-// to only the first selection's date silently loses matches for every
-// other date -- that happened in production and is what this fixes.
-// Still cheap: bounded by distinct dates in the slip (typically 1-4),
-// not by selection count. Each fetch is independently fault-tolerant.
-//
-// Predictz only has 3 fetchable windows (today / tomorrow / a specific
-// later date), not arbitrary per-date fetches like Statarea -- daysAhead
-// (0, 1, or 2) controls how far out to also check, independent of the
-// exact kickoffDates passed.
-export async function fetchTipsterSources(kickoffDates: string[] = [], predictzDaysAhead: number[] = [0]): Promise<TipsterSourceData> {
+// present across all selections. Reads from the tipster_predictions
+// CACHE (populated by the daily /api/cron/tipster-refresh job), not a
+// live fetch -- that's the actual fix for the per-request ZenRows/
+// Statarea cost that was happening before this cache existed. A date
+// with no cached data (cron hasn't covered it yet) simply contributes
+// nothing for that date, same as any other "not covered" case.
+export async function fetchTipsterSources(kickoffDates: string[] = []): Promise<TipsterSourceData> {
   const uniqueDates = Array.from(new Set(kickoffDates.filter(Boolean)));
-  const datesToFetch = uniqueDates.length > 0 ? uniqueDates : [undefined]; // undefined = Statarea's own "today" default
-  const uniqueDaysAhead = Array.from(new Set(predictzDaysAhead));
+  if (uniqueDates.length === 0) return { statarea: [], predictz: [] };
 
-  const [statareaSettled, predictzSettled] = await Promise.all([
-    Promise.allSettled(datesToFetch.map((d) => fetchStatareaPredictions(d))),
-    Promise.allSettled(uniqueDaysAhead.map((d) => fetchPredictzPredictions(d))),
-  ]);
-
-  const statarea = statareaSettled.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
-  const predictz = predictzSettled.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
-
-  return { statarea, predictz };
+  return getCachedTipsterSources(uniqueDates);
 }
 
 function getStatareaProbability(prediction: StatareaPrediction, market: MarketSelector): number | null {

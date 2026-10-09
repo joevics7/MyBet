@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/predictor",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/tipster-refresh",
+      "schedule": "0 4 * * *"
     }
   ]
 }
