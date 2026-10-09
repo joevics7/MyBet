@@ -1,4 +1,18 @@
+// OPERATING NOTES -- Daily AI Predictor
+// - Runs ONCE a day. The trigger is cron-job.org (not Vercel Cron):
+//     GET https://<your-domain>/api/cron/predictor
+//     header  Authorization: Bearer <CRON_SECRET>      (set CRON_SECRET in Vercel)
+//   cron-job.org drops a request after ~30s, so by default this route replies
+//   202 immediately and finishes the job in the background (waitUntil).
+//   Add ?wait=1 to run it in the foreground and get the full JSON report
+//   (use that for manual testing).
+// - Game details are fetched ONCE per run (the day's games + odds from the
+//   SportyBet feed, team form from API-Football) and every prediction/ticket is
+//   calculated from that single fetch, then stored in predictor_tickets.
+//   Visitors only ever read the stored tickets; nothing is fetched per visit.
+// - Re-running the same day replaces that day's tickets.
 import { NextRequest, NextResponse } from 'next/server';
+import { waitUntil } from '@vercel/functions';
 import { generateReason } from '@/lib/services/gemini';
 import { generateDailyTickets, type CandidateSelection, type GeneratedTicket } from '@/lib/services/predictorSelection';
 import { collectCandidates } from '@/lib/predictor/candidates';
@@ -9,7 +23,9 @@ export const maxDuration = 60; // this job does real work; use the full serverle
 
 function isAuthorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
-  if (!secret) return true; // no secret configured yet -- allow, but this should be set before going live
+  // In production the endpoint is public (cron-job.org calls it), so a secret is
+  // REQUIRED: without one it refuses to run. Locally it stays open for testing.
+  if (!secret) return process.env.NODE_ENV !== 'production';
   return req.headers.get('authorization') === `Bearer ${secret}`;
 }
 
@@ -17,16 +33,27 @@ export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  // Top-level safety net so an unexpected bug returns a diagnosable error.
-  try {
-    return await runPredictorJob();
-  } catch (err) {
-    console.error('[predictor cron] unhandled error:', err);
-    return NextResponse.json(
-      { error: 'Unhandled error', message: err instanceof Error ? err.message : String(err) },
-      { status: 500 },
-    );
+  // Foreground run (manual testing): full JSON report, errors returned to the caller.
+  if (req.nextUrl.searchParams.get('wait') === '1') {
+    try {
+      return await runPredictorJob();
+    } catch (err) {
+      console.error('[predictor cron] unhandled error:', err);
+      return NextResponse.json(
+        { error: 'Unhandled error', message: err instanceof Error ? err.message : String(err) },
+        { status: 500 },
+      );
+    }
   }
+
+  // Normal run: answer cron-job.org right away, finish in the background.
+  // Results/errors go to the Vercel function logs ("[predictor cron] ...").
+  waitUntil(
+    runPredictorJob()
+      .then((res) => console.log('[predictor cron] finished, HTTP', res.status))
+      .catch((err) => console.error('[predictor cron] unhandled error:', err)),
+  );
+  return NextResponse.json({ status: 'started', note: 'Running in the background. Add ?wait=1 to run in the foreground and see the report.' }, { status: 202 });
 }
 
 // One analysis per unique pick: the same selection often appears in several tickets.

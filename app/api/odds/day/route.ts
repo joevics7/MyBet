@@ -1,3 +1,11 @@
+// OPERATING NOTES -- Odds Comparison
+// - Target: odds are refreshed 3 TIMES A DAY by a scheduled job (cron-job.org),
+//   stored, and every visitor reads the stored snapshot. Opening the page
+//   never fans out to SportyBet / Football.com / Betway / OddsPapi.
+// - STATUS: not built that way yet. Today this route builds the day ON DEMAND
+//   (shared 5-minute cache), so each cold visit does the upstream fetching.
+//   Moving to 3x/day needs a snapshot table + a scheduled job route; the
+//   builder (lib/odds/day.ts) is reusable as-is for that job.
 import { NextResponse } from 'next/server';
 import { buildDay } from '@/lib/odds/day';
 import type { DayOdds } from '@/lib/odds/types';

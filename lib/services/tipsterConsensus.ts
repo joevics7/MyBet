@@ -1,3 +1,17 @@
+// OPERATING NOTES -- Confidence Score (Tipster Score part)
+// - Target: Statarea, PredictZ and Forebet are fetched ONCE A DAY, stored, and
+//   every confidence score is calculated from that stored data. A decode never
+//   fetches those sites itself.
+// - STATUS: not built that way yet.
+//     * Forebet: not implemented (only Statarea and PredictZ exist).
+//     * Statarea/PredictZ are currently fetched LIVE on every decode request
+//       (PredictZ through ZenRows, which costs credits and adds seconds per
+//       decode). Moving to a daily stored fetch means a daily job that saves
+//       the predictions to a table, and fetchTipsterSources() reading that
+//       table instead of the sites; the matching code below stays as-is.
+// - BetMeter Score (our own model) is separate: it uses team form from
+//   API-Football, which is cached for 6 hours.
+
 // Tipster Consensus -- a SEPARATE, independently-shown score from our own
 // Poisson model, not blended into it. Averages across whatever external
 // prediction sites have a match for this fixture/market. Currently
