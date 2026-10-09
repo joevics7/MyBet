@@ -17,7 +17,7 @@ async function getTodaysTickets(): Promise<PredictorTicket[] | null> {
 
   const { data: tickets } = await supabase
     .from('predictor_tickets')
-    .select('id, target_band, combined_odds, avg_confidence')
+    .select('*')
     .eq('ticket_date', today)
     .order('target_band', { ascending: true });
 
@@ -25,7 +25,7 @@ async function getTodaysTickets(): Promise<PredictorTicket[] | null> {
 
   const { data: selections } = await supabase
     .from('predictor_ticket_selections')
-    .select('ticket_id, home_team, away_team, competition, market, score, model_odds, reason, kickoff_at')
+    .select('*')
     .in(
       'ticket_id',
       tickets.map((t) => t.id),
@@ -50,10 +50,11 @@ export default async function Page() {
       status={hasTickets ? 'live' : 'soon'}
       howItWorks={
         <p>
-          Each morning, every viable market on the day&rsquo;s fixtures is scored by the Confidence
-          Engine. Up to five tickets are published, one per target odds band (1.5 / 2 / 3 / 4 / 5),
-          each built from the highest-confidence combination available. A light fixture day may
-          publish fewer than five. Statistical analysis, not a guarantee.
+          Each morning, the day&rsquo;s games and their real bookmaker odds are scored by the same
+          Confidence Engine as the Decoder, using each team&rsquo;s recent form. Up to five tickets are
+          published, one per target odds band (1.5 / 2 / 3 / 4 / 5), each built from the
+          highest-confidence combination available, with a short written analysis for every pick. A
+          light fixture day may publish fewer than five. Statistical analysis, not a guarantee.
         </p>
       }
       body={

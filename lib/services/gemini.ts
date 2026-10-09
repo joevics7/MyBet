@@ -18,6 +18,10 @@ export interface ReasonInput {
   awayForm: string;
   homeGoalsAvg: number;  // goals scored per game, recent form
   awayGoalsAvg: number;
+  // Optional extras for richer analysis (the Predictor passes these):
+  modelProbability?: number; // our model's chance for the pick, 0-1
+  bookOdds?: number;         // a real bookmaker's decimal odds for the pick
+  bookName?: string;
 }
 
 // Templated fallback used when GEMINI_API_KEY isn't set, or the call
@@ -25,22 +29,32 @@ export interface ReasonInput {
 // polished than an AI-written sentence, but never silently missing.
 function templatedReason(input: ReasonInput): string {
   const { homeTeam, awayTeam, homeForm, awayForm, homeGoalsAvg, awayGoalsAvg } = input;
-  return `${homeTeam} averaging ${homeGoalsAvg.toFixed(1)} goals/game (form: ${homeForm}) vs ` +
-    `${awayTeam} at ${awayGoalsAvg.toFixed(1)} (form: ${awayForm}).`;
+  const base = `${homeTeam} averaging ${homeGoalsAvg.toFixed(1)} goals/game (form: ${homeForm || 'n/a'}) vs ` +
+    `${awayTeam} at ${awayGoalsAvg.toFixed(1)} (form: ${awayForm || 'n/a'}).`;
+  if (input.modelProbability === undefined || !input.bookOdds) return base;
+  const implied = Math.round((1 / input.bookOdds) * 100);
+  return `${base} Our model gives ${Math.round(input.modelProbability * 100)}% against ${implied}% implied by the odds.`;
 }
 
 export async function generateReason(input: ReasonInput): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return templatedReason(input);
 
-  const prompt = `You write one short, factual sentence explaining a football betting confidence score. ` +
-    `Given this data, write ONE sentence (max 20 words, no emoji, no hedging like "might" or "could") ` +
-    `stating the key factual reason behind the score. State facts only, never predict or guarantee an outcome.\n\n` +
+  const withOdds = input.modelProbability !== undefined && !!input.bookOdds;
+  const prompt = `You write short, factual analysis explaining a football betting confidence score. ` +
+    `Given this data, write ${withOdds ? 'TWO short sentences (max 40 words total)' : 'ONE sentence (max 20 words)'}, no emoji, ` +
+    `no hedging like "might" or "could". First state the key factual reason behind the score (recent form, goals scored)` +
+    `${withOdds ? '; then say how our model\'s probability compares with the probability implied by the bookmaker odds' : ''}. ` +
+    `State facts only, never predict or guarantee an outcome.\n\n` +
     `Match: ${input.homeTeam} vs ${input.awayTeam}\n` +
     `Market: ${input.market}\n` +
     `Confidence score: ${input.score}/100\n` +
     `${input.homeTeam} recent form: ${input.homeForm}, averaging ${input.homeGoalsAvg.toFixed(1)} goals/game\n` +
-    `${input.awayTeam} recent form: ${input.awayForm}, averaging ${input.awayGoalsAvg.toFixed(1)} goals/game`;
+    `${input.awayTeam} recent form: ${input.awayForm}, averaging ${input.awayGoalsAvg.toFixed(1)} goals/game` +
+    (withOdds
+      ? `\nOur model's probability for this pick: ${Math.round(input.modelProbability! * 100)}%` +
+        `\n${input.bookName ?? 'Bookmaker'} odds: ${input.bookOdds!.toFixed(2)} (implied probability ${Math.round((1 / input.bookOdds!) * 100)}%)`
+      : '');
 
   try {
     const res = await fetch(GEMINI_URL, {
@@ -51,7 +65,7 @@ export async function generateReason(input: ReasonInput): Promise<string> {
       },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 60, temperature: 0.3 },
+        generationConfig: { maxOutputTokens: 120, temperature: 0.3 },
       }),
       signal: AbortSignal.timeout(6000),
     });

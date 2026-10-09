@@ -7,6 +7,9 @@ export interface PredictorSelection {
   market: string;
   score: number;
   model_odds: number;
+  book_odds?: number | null;
+  book_name?: string | null;
+  model_probability?: number | null;
   reason: string | null;
   kickoff_at: string | null;
 }
@@ -16,6 +19,7 @@ export interface PredictorTicket {
   target_band: number;
   combined_odds: number;
   avg_confidence: number;
+  odds_basis?: 'bookmaker' | 'model' | null;
   selections: PredictorSelection[];
 }
 
@@ -34,7 +38,7 @@ function TicketCard({ ticket }: { ticket: PredictorTicket }) {
           <p className="font-serif font-semibold">Target odds ~{ticket.target_band}</p>
         </div>
         <span className="text-xs font-mono text-muted-foreground">
-          Combined: {ticket.combined_odds.toFixed(2)} &middot; Avg confidence: {Math.round(ticket.avg_confidence)}
+          {ticket.odds_basis === 'bookmaker' ? 'Odds' : 'Model odds'}: {ticket.combined_odds.toFixed(2)} &middot; Avg confidence: {Math.round(ticket.avg_confidence)}
         </span>
       </div>
       <div className="space-y-2">
@@ -48,7 +52,15 @@ function TicketCard({ ticket }: { ticket: PredictorTicket }) {
               <span className={`text-xs font-mono font-semibold ${scoreColor(s.score)}`}>{s.score}</span>
             </div>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {s.market} &middot; model odds {s.model_odds.toFixed(2)}
+              {s.market} &middot;{' '}
+              {s.book_odds ? (
+                <>
+                  {s.book_name ?? 'Bookmaker'} <span className="font-mono">{Number(s.book_odds).toFixed(2)}</span>
+                </>
+              ) : (
+                <>model odds {Number(s.model_odds).toFixed(2)}</>
+              )}
+              {s.model_probability ? <> &middot; model {Math.round(Number(s.model_probability) * 100)}%</> : null}
             </p>
             {s.reason && <p className="text-xs text-muted-foreground mt-1">{s.reason}</p>}
           </div>
@@ -62,9 +74,9 @@ export function PredictorTickets({ tickets }: { tickets: PredictorTicket[] }) {
   return (
     <div className="space-y-4">
       <p className="text-xs text-muted-foreground bg-muted/40 border border-border rounded-sm px-3 py-2">
-        &ldquo;Odds&rdquo; here are our own model&rsquo;s implied fair odds (1 / estimated probability),
-        not a live bookmaker price -- they won&rsquo;t exactly match what you find on a betting platform.
-        Statistical analysis, not a guarantee.
+        {tickets.every((t) => t.odds_basis === 'bookmaker')
+          ? 'Odds are the bookmaker\u2019s prices when the tickets were built, and they can change. Check the price on the platform before you bet. Statistical analysis, not a guarantee.'
+          : 'Some or all odds shown are our model\u2019s implied fair odds (1 / estimated probability), not a live bookmaker price, so they will not match a betting platform exactly. Statistical analysis, not a guarantee.'}
       </p>
       {tickets.map((ticket) => (
         <TicketCard key={ticket.id} ticket={ticket} />

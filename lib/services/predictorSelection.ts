@@ -4,14 +4,12 @@
 // by combining high-confidence selections until their combined odds land
 // within tolerance of the target.
 //
-// IMPORTANT: "odds" here means MODEL-IMPLIED FAIR ODDS (1/probability
-// from our own Poisson model), not real bookmaker odds. football-data.org's
-// free tier has no odds data (that's a paid add-on). This is a known,
-// deliberate v1 limitation -- these tickets are built and scored
-// correctly, but the "2.0 odds" label means "our model implies ~50% for
-// this combination," not "SportyBet will give you 2.0 for it." Upgrading
-// to real multi-book odds is a clean follow-up once there's a
-// business case for the paid odds source.
+// ODDS: each candidate carries `odds` -- the price the ticket is built from.
+// When the game came from a bookmaker's feed (SportyBet) that is the REAL
+// bookmaker price (`oddsSource: 'bookmaker'`). When only fixtures were
+// available (fallback), it is the model-implied fair odds, 1/probability from
+// our Poisson model (`oddsSource: 'model'`), which won't match a platform's
+// price. A ticket is only labelled 'bookmaker' if every leg is.
 
 export interface CandidateSelection {
   externalEventId: string;
@@ -21,6 +19,12 @@ export interface CandidateSelection {
   market: string;
   score: number;      // 0-100, from the Confidence Engine
   modelOdds: number;   // 1 / probability
+  probability?: number;   // model probability for the pick, 0-1
+  odds: number;           // price the ticket is built from (see ODDS above)
+  oddsSource: 'bookmaker' | 'model';
+  bookName?: string;      // e.g. "SportyBet" when oddsSource is 'bookmaker'
+  // Real inputs for the written analysis (shared per fixture).
+  form?: { home: string; away: string; homeGoalsAvg: number; awayGoalsAvg: number };
   reason: string;
   kickoffAt: string | null;
 }
@@ -29,6 +33,7 @@ export interface GeneratedTicket {
   targetBand: number;
   combinedOdds: number;
   avgConfidence: number;
+  oddsBasis: 'bookmaker' | 'model';
   selections: CandidateSelection[];
 }
 
@@ -42,7 +47,12 @@ const MAX_LEGS = 6;           // a ticket shouldn't need more than this to hit o
 // candidates first, stops exploring a branch once it overshoots the
 // target band, and never reuses a fixture within one ticket (avoids
 // correlated selections from the same match).
-function buildTicketForBand(pool: CandidateSelection[], target: number): GeneratedTicket | null {
+const signature = (sels: CandidateSelection[]) =>
+  sels.map((x) => `${x.externalEventId}|${x.market}`).sort().join('~');
+
+// `taken` holds tickets already published for other bands: adjacent bands'
+// odds windows overlap, and showing the same ticket twice isn't useful.
+function buildTicketForBand(pool: CandidateSelection[], target: number, taken: Set<string> = new Set()): GeneratedTicket | null {
   const lower = target * (1 - TOLERANCE);
   const upper = target * (1 + TOLERANCE);
   const overshootCutoff = target * (1 + TOLERANCE) * 1.6; // prune well past the tolerance window
@@ -50,7 +60,7 @@ function buildTicketForBand(pool: CandidateSelection[], target: number): Generat
   let best: { selections: CandidateSelection[]; odds: number; avgScore: number } | null = null;
 
   function search(startIdx: number, used: Set<string>, odds: number, chosen: CandidateSelection[], scoreSum: number) {
-    if (chosen.length > 0 && odds >= lower && odds <= upper) {
+    if (chosen.length > 0 && odds >= lower && odds <= upper && !taken.has(signature(chosen))) {
       const avgScore = scoreSum / chosen.length;
       if (!best || avgScore > best.avgScore) {
         best = { selections: [...chosen], odds, avgScore };
@@ -63,7 +73,7 @@ function buildTicketForBand(pool: CandidateSelection[], target: number): Generat
       const c = pool[i];
       if (used.has(c.externalEventId)) continue;
 
-      const newOdds = odds * c.modelOdds;
+      const newOdds = odds * c.odds;
       if (newOdds > overshootCutoff) continue;
 
       used.add(c.externalEventId);
@@ -80,6 +90,7 @@ function buildTicketForBand(pool: CandidateSelection[], target: number): Generat
     targetBand: target,
     combinedOdds: b.odds,
     avgConfidence: b.avgScore,
+    oddsBasis: b.selections.every((x) => x.oddsSource === 'bookmaker') ? 'bookmaker' : 'model',
     selections: b.selections,
   };
 }
@@ -91,9 +102,13 @@ export function generateDailyTickets(candidates: CandidateSelection[]): Generate
     .slice(0, MAX_POOL_SIZE);
 
   const tickets: GeneratedTicket[] = [];
+  const taken = new Set<string>();
   for (const band of TARGET_BANDS) {
-    const ticket = buildTicketForBand(pool, band);
-    if (ticket) tickets.push(ticket);
+    const ticket = buildTicketForBand(pool, band, taken);
+    if (ticket) {
+      tickets.push(ticket);
+      taken.add(signature(ticket.selections));
+    }
     // A band with no valid combination is simply skipped -- a light
     // fixture day publishing fewer than 5 tickets is expected behavior,
     // per the product spec's edge-case handling, not an error.

@@ -66,7 +66,7 @@ export const TOOLS_CATALOG: ToolEntry[] = [
     shortTitle: 'Predictor',
     tagline: "Five daily tickets, one per odds band, built from the day's highest-confidence selections.",
     href: '/predictor',
-    status: 'soon',
+    status: 'live',
     isBonus: true,
   },
 ];

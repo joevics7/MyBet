@@ -1,48 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchMatchesByDateRange } from '@/lib/services/footballData';
-import { computeMatchProbabilities, scoreForMarket, type MarketSelector } from '@/lib/services/confidenceEngine';
 import { generateReason } from '@/lib/services/gemini';
-import { generateDailyTickets, type CandidateSelection } from '@/lib/services/predictorSelection';
+import { generateDailyTickets, type CandidateSelection, type GeneratedTicket } from '@/lib/services/predictorSelection';
+import { collectCandidates } from '@/lib/predictor/candidates';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60; // this job does real work; use the full serverless budget
-
-// The markets scanned for every fixture. Keep this list bounded --
-// football-data.org's free tier is limited, and every fixture we scan is
-// 2 requests (home + away form) regardless of how many markets we derive
-// from that one fetch, so the market list itself doesn't add API cost,
-// only compute (cheap).
-const CANDIDATE_MARKETS: MarketSelector[] = [
-  { type: '1X2', pick: 'home' },
-  { type: '1X2', pick: 'draw' },
-  { type: '1X2', pick: 'away' },
-  { type: 'BTTS', pick: 'yes' },
-  { type: 'OVER_UNDER', pick: 'over', line: 2.5 },
-  { type: 'OVER_UNDER', pick: 'under', line: 2.5 },
-];
-
-const FIXTURE_WINDOW_DAYS = 2; // scan the next 2 days of fixtures each run
-
-// football-data.org free tier is 10 req/min, and each fixture costs 2
-// requests (home + away form). Capping fixtures processed per run bounds
-// both the API-call budget and this function's execution time -- on a
-// heavy multi-competition day there may be more scheduled fixtures than
-// this, and those simply aren't scanned that run rather than the job
-// failing outright. That's an accepted free-tier limitation, not a bug.
-//
-// Cut down from 25->12 and throttle 300ms->100ms after a 502 on first
-// live test: scanning many fixtures sequentially (2 API calls + a Gemini
-// call per selection that makes a ticket, each with its own network
-// round-trip) adds up fast in a single request/response cycle. Smaller
-// and faster first, can raise again once there's a stable baseline for
-// how long this actually takes end to end.
-const MAX_FIXTURES_PER_RUN = 12;
-const THROTTLE_MS = 100;
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function isAuthorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
@@ -54,11 +17,7 @@ export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-
-  // Top-level safety net: every known failure mode inside is already
-  // caught individually (per-fixture, Gemini, Supabase), but this catches
-  // anything unexpected so a bug here returns a diagnosable JSON error
-  // instead of an opaque crash.
+  // Top-level safety net so an unexpected bug returns a diagnosable error.
   try {
     return await runPredictorJob();
   } catch (err) {
@@ -70,132 +29,96 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// One analysis per unique pick: the same selection often appears in several tickets.
+async function writeAnalysis(tickets: GeneratedTicket[]) {
+  const unique = new Map<string, CandidateSelection[]>();
+  for (const t of tickets) {
+    for (const s of t.selections) {
+      const key = `${s.externalEventId}|${s.market}`;
+      unique.set(key, [...(unique.get(key) ?? []), s]);
+    }
+  }
+  const entries = Array.from(unique.values());
+  for (let i = 0; i < entries.length; i += 5) {
+    await Promise.all(
+      entries.slice(i, i + 5).map(async (group) => {
+        const s = group[0];
+        const reason = await generateReason({
+          homeTeam: s.homeTeam,
+          awayTeam: s.awayTeam,
+          market: s.market,
+          score: s.score,
+          homeForm: s.form?.home ?? '',
+          awayForm: s.form?.away ?? '',
+          homeGoalsAvg: s.form?.homeGoalsAvg ?? 0,
+          awayGoalsAvg: s.form?.awayGoalsAvg ?? 0,
+          modelProbability: s.probability,
+          bookOdds: s.oddsSource === 'bookmaker' ? s.odds : undefined,
+          bookName: s.bookName,
+        });
+        for (const g of group) g.reason = reason;
+      }),
+    );
+  }
+}
+
+// If the database migration for the new columns hasn't been applied yet, fall
+// back to the original columns instead of losing the whole ticket.
+async function insertTolerant(admin: ReturnType<typeof getSupabaseAdmin>, table: string, rows: object | object[], legacy: (r: any) => object) {
+  const first = await admin.from(table).insert(rows as never).select('id');
+  if (!first.error) return first;
+  console.error(`[predictor cron] insert into ${table} failed, retrying without new columns:`, first.error.message);
+  const legacyRows = Array.isArray(rows) ? rows.map(legacy) : legacy(rows);
+  return admin.from(table).insert(legacyRows as never).select('id');
+}
+
 async function runPredictorJob(): Promise<NextResponse> {
   const startedAt = Date.now();
-  const dateFrom = new Date().toISOString().slice(0, 10);
-  const dateTo = new Date(Date.now() + FIXTURE_WINDOW_DAYS * 86400000).toISOString().slice(0, 10);
+  const ticketDate = new Date().toISOString().slice(0, 10);
 
-  let fixtures;
+  let collected;
   try {
-    fixtures = await fetchMatchesByDateRange(dateFrom, dateTo);
+    collected = await collectCandidates();
   } catch (err) {
-    console.error('[predictor cron] failed to fetch fixtures:', err);
+    console.error('[predictor cron] failed to collect candidates:', err);
     return NextResponse.json({ error: 'Failed to fetch fixtures' }, { status: 502 });
   }
+  const { candidates, stats } = collected;
+  const scanMs = Date.now() - startedAt;
 
-  const rawFixtureCount = fixtures.length;
-  const statusCounts = fixtures.reduce<Record<string, number>>((acc, f) => {
-    acc[f.status] = (acc[f.status] ?? 0) + 1;
-    return acc;
-  }, {});
-
-  const scheduled = fixtures
-    .filter((f) => f.status === 'SCHEDULED' || f.status === 'TIMED')
-    .slice(0, MAX_FIXTURES_PER_RUN);
-
-  // Build candidates WITHOUT reason text yet -- Gemini is only called
-  // later, for the small subset of selections that actually make it into
-  // a final ticket. Evaluating fixtures x 6 markets here is pure math, no
-  // extra API cost beyond the 2 football-data.org calls per fixture.
-  const candidates: CandidateSelection[] = [];
-  let skippedCount = 0;
-
-  for (const fixture of scheduled) {
-    let outcome;
-    try {
-      outcome = await computeMatchProbabilities(fixture.homeTeam.id, fixture.awayTeam.id, [2.5]);
-    } catch (err) {
-      // One fixture erroring (rate limit, network blip, etc.) skips just
-      // that fixture -- it must not take down the whole run.
-      console.error('[predictor cron] fixture scoring failed, skipping:', fixture.id, err);
-      skippedCount++;
-      await sleep(THROTTLE_MS);
-      continue;
-    }
-
-    if (outcome.status !== 'ok') {
-      await sleep(THROTTLE_MS);
-      continue; // insufficient data for this fixture -- skip, not an error
-    }
-
-    for (const market of CANDIDATE_MARKETS) {
-      const scored = scoreForMarket(market, outcome.data.probs);
-      if (!scored) continue;
-
-      candidates.push({
-        externalEventId: String(fixture.id),
-        homeTeam: fixture.homeTeam.name,
-        awayTeam: fixture.awayTeam.name,
-        competition: fixture.competition.name,
-        market:
-          market.type === '1X2'
-            ? `1X2 - ${market.pick}`
-            : market.type === 'BTTS'
-              ? 'BTTS - Yes'
-              : `${market.pick === 'over' ? 'Over' : 'Under'} ${market.line}`,
-        score: scored.score,
-        modelOdds: Math.round((1 / scored.probability) * 100) / 100,
-        reason: '', // filled in below, only for selections that make a final ticket
-        kickoffAt: fixture.utcDate,
-      });
-    }
-
-    await sleep(THROTTLE_MS);
-  }
-
-  const fixtureScanMs = Date.now() - startedAt;
   const tickets = generateDailyTickets(candidates);
 
-  const reasonsStartedAt = Date.now();
-  // Now generate reasons -- only for the selections actually used.
-  for (const ticket of tickets) {
-    for (const sel of ticket.selections) {
-      sel.reason = await generateReason({
-        homeTeam: sel.homeTeam,
-        awayTeam: sel.awayTeam,
-        market: sel.market,
-        score: sel.score,
-        homeForm: '', // form strings aren't retained per-candidate to avoid holding
-        awayForm: '', // large state across ~30 fixtures; reason still has score+teams+market
-        homeGoalsAvg: 0,
-        awayGoalsAvg: 0,
-      });
-    }
-  }
-
-  const ticketDate = dateFrom;
+  const analysisStartedAt = Date.now();
+  await writeAnalysis(tickets);
+  const analysisMs = Date.now() - analysisStartedAt;
 
   try {
     const admin = getSupabaseAdmin();
 
-    // Replace today's tickets wholesale -- this cron runs once/day, so
-    // there's no reason to accumulate multiple generations per date.
-    const { data: existingTickets } = await admin
-      .from('predictor_tickets')
-      .select('id')
-      .eq('ticket_date', ticketDate);
-
-    if (existingTickets && existingTickets.length > 0) {
-      await admin.from('predictor_tickets').delete().eq('ticket_date', ticketDate);
-    }
+    // Replace today's tickets wholesale: this runs once a day.
+    await admin.from('predictor_tickets').delete().eq('ticket_date', ticketDate);
 
     for (const ticket of tickets) {
-      const { data: ticketRow, error } = await admin
-        .from('predictor_tickets')
-        .insert({
+      const t = await insertTolerant(
+        admin,
+        'predictor_tickets',
+        {
           ticket_date: ticketDate,
           target_band: ticket.targetBand,
           combined_odds: ticket.combinedOdds,
           avg_confidence: ticket.avgConfidence,
-        })
-        .select('id')
-        .single();
+          odds_basis: ticket.oddsBasis,
+        },
+        ({ odds_basis: _o, ...rest }) => rest,
+      );
+      const ticketId = t.data?.[0]?.id;
+      if (t.error || !ticketId) continue;
 
-      if (error || !ticketRow) continue;
-
-      await admin.from('predictor_ticket_selections').insert(
+      await insertTolerant(
+        admin,
+        'predictor_ticket_selections',
         ticket.selections.map((s) => ({
-          ticket_id: ticketRow.id,
+          ticket_id: ticketId,
           external_event_id: s.externalEventId,
           home_team: s.homeTeam,
           away_team: s.awayTeam,
@@ -203,9 +126,13 @@ async function runPredictorJob(): Promise<NextResponse> {
           market: s.market,
           score: s.score,
           model_odds: s.modelOdds,
+          book_odds: s.oddsSource === 'bookmaker' ? s.odds : null,
+          book_name: s.oddsSource === 'bookmaker' ? s.bookName ?? null : null,
+          model_probability: s.probability ?? null,
           reason: s.reason,
           kickoff_at: s.kickoffAt,
         })),
+        ({ book_odds: _a, book_name: _b, model_probability: _c, ...rest }) => rest,
       );
     }
   } catch (err) {
@@ -213,18 +140,11 @@ async function runPredictorJob(): Promise<NextResponse> {
     return NextResponse.json({ error: 'Generated tickets but failed to save them', tickets }, { status: 500 });
   }
 
-  const reasonsMs = Date.now() - reasonsStartedAt;
-  const totalMs = Date.now() - startedAt;
-
   return NextResponse.json({
     ticketDate,
-    rawFixtureCount,
-    statusCounts,
-    fixturesScanned: scheduled.length,
-    fixturesSkipped: skippedCount,
-    candidatesEvaluated: candidates.length,
+    ...stats,
     ticketsGenerated: tickets.length,
-    timingMs: { fixtureScan: fixtureScanMs, reasonGeneration: reasonsMs, total: totalMs },
+    timingMs: { scan: scanMs, analysis: analysisMs, total: Date.now() - startedAt },
     tickets,
   });
 }
