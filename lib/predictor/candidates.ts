@@ -1,12 +1,13 @@
 // Collects the Predictor's candidate selections.
 //
-//  MAIN:     the day's games from SportyBet's feed (real games + REAL odds).
+// Two independent sets, shown as two tabs on the page (different games, different odds):
+//  BOOKMAKER set: the day's games from SportyBet's feed (real games + REAL odds).
 //            Each game is matched to a fixture in our football data
 //            (API-Football first, football-data.org as fallback -- the same
 //            matcher the Decoder's confidence score uses), scored by the same
 //            engine, and every priced market becomes a candidate.
-//  FALLBACK: if SportyBet's feed fails or returns nothing, scan fixtures from
-//            our football data and price them with model-implied odds.
+//  MODEL set: fixtures from our football data (any league it covers, whether or
+//            not SportyBet lists them), priced with model-implied odds (1/probability).
 
 import { fetchFamilyFeed, SPORTYBET } from '@/lib/odds/sportybetFeed';
 import type { FeedMatch } from '@/lib/odds/types';
@@ -19,7 +20,7 @@ import type { CandidateSelection } from '@/lib/services/predictorSelection';
 export const FIXTURE_WINDOW_DAYS = 2;
 export const MAX_GAMES_PER_RUN = 60;
 const CONCURRENCY = 4;
-const SCAN_BUDGET_MS = 32000; // leave the rest of the 60s for analysis text + saving
+const SCAN_BUDGET_MS = 25000; // both sets scan in parallel; leaves the rest of the 60s for analysis, saving and codes
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // The markets scanned for every game. One form fetch per team covers all of them.
@@ -129,6 +130,7 @@ async function fromBookmaker(started: number): Promise<Collected | null> {
           probability: scored.probability,
           odds,
           oddsSource: 'bookmaker',
+          selector: market,
           bookName: SPORTYBET.label,
           form,
           reason: '',
@@ -152,14 +154,14 @@ async function fromFixtures(started: number): Promise<Collected> {
   const dateTo = new Date(Date.now() + FIXTURE_WINDOW_DAYS * 86400000).toISOString().slice(0, 10);
   const useAf = isApiFootballConfigured();
   const fixtures = await (useAf ? afFetchRange : fdFetchRange)(dateFrom, dateTo);
-  const scheduled = fixtures
+  const scheduled = Array.from(new Map(fixtures.map((f) => [f.id, f])).values())
     .filter((f) => (f.status === 'SCHEDULED' || f.status === 'TIMED') && !LOW_SIGNAL.test(`${f.homeTeam.name} ${f.awayTeam.name} ${f.competition.name}`))
     .slice(0, MAX_GAMES_PER_RUN);
 
   const stats: CollectStats = {
     mode: 'model', source: useAf ? 'API-Football fixtures' : 'football-data.org fixtures', gamesAvailable: scheduled.length,
     gamesScanned: 0, notCovered: 0, insufficientData: 0, failed: 0, candidates: 0, budgetHit: false,
-    note: 'Bookmaker feed unavailable: odds are model-implied.',
+    note: 'Odds are model-implied (1 / probability), not bookmaker prices.',
   };
   const candidates: CandidateSelection[] = [];
 
@@ -184,6 +186,7 @@ async function fromFixtures(started: number): Promise<Collected> {
           probability: scored.probability,
           odds: modelOdds,
           oddsSource: 'model',
+          selector: market,
           form,
           reason: '',
           kickoffAt: f.utcDate,
@@ -200,7 +203,12 @@ async function fromFixtures(started: number): Promise<Collected> {
   return { candidates, stats };
 }
 
-export async function collectCandidates(): Promise<Collected> {
-  const started = Date.now();
-  return (await fromBookmaker(started)) ?? (await fromFixtures(started));
+// Bookmaker set: null when SportyBet's feed is unavailable (the tab then shows nothing today).
+export async function collectBookmakerCandidates(): Promise<Collected | null> {
+  return fromBookmaker(Date.now());
+}
+
+// Model set: always built from fixtures, independent of the bookmaker feed.
+export async function collectModelCandidates(): Promise<Collected> {
+  return fromFixtures(Date.now());
 }

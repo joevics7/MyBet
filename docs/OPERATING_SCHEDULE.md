@@ -19,6 +19,12 @@ notes at the top of each file listed below.
 - cron-job.org gives up after about 30 seconds, so the route answers `202`
   straight away and finishes in the background. Add `?wait=1` to run it in the
   foreground and get the full report (use for manual testing).
+- Two sets are published each day (two tabs on the page): **Bookmaker odds**
+  (SportyBet's games with real prices) and **Model odds** (wider fixture list,
+  model-implied odds). Up to five tickets per set, one per odds band.
+- Booking codes are created after the tickets are saved (SportyBet, Football.com,
+  MSport and Betway, only where every pick of the ticket exists on that platform)
+  and stored on the ticket in `booking_codes`.
 - Vercel Cron is not used (`vercel.json` has no crons), so it cannot double-run.
 
 ## Odds Comparison (`app/api/odds/day/route.ts`, `lib/odds/day.ts`)

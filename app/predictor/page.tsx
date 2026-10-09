@@ -7,7 +7,7 @@ export const revalidate = 3600; // tickets only change once/day, via the cron jo
 
 export const metadata: Metadata = {
   title: 'Daily AI Predictor',
-  description: "Five daily tickets, one per odds band, built from the day's highest-confidence selections.",
+  description: "Two sets of daily tickets, one per odds band, built from the day's highest-confidence selections.",
 };
 
 async function getTodaysTickets(): Promise<PredictorTicket[] | null> {
@@ -46,15 +46,17 @@ export default async function Page() {
   return (
     <ToolPageShell
       title="Daily AI Predictor"
-      tagline="Five daily tickets, one per odds band, built from the day's highest-confidence selections."
+      tagline="Two sets of daily tickets, one per odds band, built from the day's highest-confidence selections."
       status={hasTickets ? 'live' : 'soon'}
       howItWorks={
         <p>
-          Each morning, the day&rsquo;s games and their real bookmaker odds are scored by the same
-          Confidence Engine as the Decoder, using each team&rsquo;s recent form. Up to five tickets are
-          published, one per target odds band (1.5 / 2 / 3 / 4 / 5), each built from the
-          highest-confidence combination available, with a short written analysis for every pick. A
-          light fixture day may publish fewer than five. Statistical analysis, not a guarantee.
+          Once a day, the day&rsquo;s games are scored by the same Confidence Engine as the Decoder, using each
+          team&rsquo;s recent form. Two sets are published: <strong>Bookmaker odds</strong> uses the games listed on
+          SportyBet with their real prices, and <strong>Model odds</strong> covers a wider set of games with our
+          model&rsquo;s own fair odds. Each has up to five tickets, one per target odds band (1.5 / 2 / 3 / 4 / 5),
+          built from the highest-confidence combination available, with a short written analysis for every pick.
+          Where possible a booking code is already created for each ticket, so you can load it straight onto the
+          platform. A light fixture day may publish fewer tickets. Statistical analysis, not a guarantee.
         </p>
       }
       body={

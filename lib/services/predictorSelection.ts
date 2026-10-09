@@ -11,6 +11,15 @@
 // our Poisson model (`oddsSource: 'model'`), which won't match a platform's
 // price. A ticket is only labelled 'bookmaker' if every leg is.
 
+// A booking code already created on a platform for one ticket.
+export interface TicketCode {
+  slug: string;
+  label: string;
+  code: string;
+  deepLink: string | null;
+  totalOdds: number | null; // the platform's own total for the code, read back after creating it
+}
+
 export interface CandidateSelection {
   externalEventId: string;
   homeTeam: string;
@@ -22,6 +31,7 @@ export interface CandidateSelection {
   probability?: number;   // model probability for the pick, 0-1
   odds: number;           // price the ticket is built from (see ODDS above)
   oddsSource: 'bookmaker' | 'model';
+  selector?: import('./confidenceEngine').MarketSelector; // lets the code creator find this pick on a platform
   bookName?: string;      // e.g. "SportyBet" when oddsSource is 'bookmaker'
   // Real inputs for the written analysis (shared per fixture).
   form?: { home: string; away: string; homeGoalsAvg: number; awayGoalsAvg: number };
@@ -34,6 +44,7 @@ export interface GeneratedTicket {
   combinedOdds: number;
   avgConfidence: number;
   oddsBasis: 'bookmaker' | 'model';
+  bookingCodes: TicketCode[];
   selections: CandidateSelection[];
 }
 
@@ -91,6 +102,7 @@ function buildTicketForBand(pool: CandidateSelection[], target: number, taken: S
     combinedOdds: b.odds,
     avgConfidence: b.avgScore,
     oddsBasis: b.selections.every((x) => x.oddsSource === 'bookmaker') ? 'bookmaker' : 'model',
+    bookingCodes: [],
     selections: b.selections,
   };
 }

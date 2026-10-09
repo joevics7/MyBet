@@ -6,16 +6,23 @@
 //   202 immediately and finishes the job in the background (waitUntil).
 //   Add ?wait=1 to run it in the foreground and get the full JSON report
 //   (use that for manual testing).
-// - Game details are fetched ONCE per run (the day's games + odds from the
-//   SportyBet feed, team form from API-Football) and every prediction/ticket is
+// - Game details are fetched ONCE per run and every prediction/ticket is
 //   calculated from that single fetch, then stored in predictor_tickets.
 //   Visitors only ever read the stored tickets; nothing is fetched per visit.
+// - Two sets are published every day (two tabs on the page):
+//     'bookmaker': the day's games from SportyBet's feed with REAL odds;
+//     'model':     fixtures from our football data with model-implied odds.
+//   Different games, different odds. Up to five tickets (odds bands) per set.
+// - Booking codes are created AFTER the tickets are saved (SportyBet, Football.com,
+//   MSport, Betway where every pick exists) and attached to each ticket, so a
+//   timeout can never lose the tickets themselves.
 // - Re-running the same day replaces that day's tickets.
 import { NextRequest, NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
 import { generateReason } from '@/lib/services/gemini';
 import { generateDailyTickets, type CandidateSelection, type GeneratedTicket } from '@/lib/services/predictorSelection';
-import { collectCandidates } from '@/lib/predictor/candidates';
+import { collectBookmakerCandidates, collectModelCandidates } from '@/lib/predictor/candidates';
+import { attachBookingCodes } from '@/lib/predictor/codes';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 
 export const runtime = 'nodejs';
@@ -103,29 +110,44 @@ async function runPredictorJob(): Promise<NextResponse> {
   const startedAt = Date.now();
   const ticketDate = new Date().toISOString().slice(0, 10);
 
-  let collected;
+  // 1) Collect both sets in parallel (independent feeds, independent budgets).
+  let bookmaker, model;
   try {
-    collected = await collectCandidates();
+    [bookmaker, model] = await Promise.all([
+      collectBookmakerCandidates().catch((err) => {
+        console.error('[predictor cron] bookmaker set failed:', err);
+        return null;
+      }),
+      collectModelCandidates().catch((err) => {
+        console.error('[predictor cron] model set failed:', err);
+        return null;
+      }),
+    ]);
   } catch (err) {
     console.error('[predictor cron] failed to collect candidates:', err);
     return NextResponse.json({ error: 'Failed to fetch fixtures' }, { status: 502 });
   }
-  const { candidates, stats } = collected;
+  if (!bookmaker && !model) return NextResponse.json({ error: 'No fixtures could be fetched' }, { status: 502 });
   const scanMs = Date.now() - startedAt;
 
-  const tickets = generateDailyTickets(candidates);
+  // 2) Build tickets per set, then write the analysis for both.
+  const bookmakerTickets = bookmaker ? generateDailyTickets(bookmaker.candidates) : [];
+  const modelTickets = model ? generateDailyTickets(model.candidates) : [];
+  const all = [...bookmakerTickets, ...modelTickets];
 
   const analysisStartedAt = Date.now();
-  await writeAnalysis(tickets);
+  await writeAnalysis(all);
   const analysisMs = Date.now() - analysisStartedAt;
 
+  // 3) Save the tickets FIRST (without codes) so nothing is lost if code creation runs long.
+  const saved: { ticket: GeneratedTicket; id: string }[] = [];
   try {
     const admin = getSupabaseAdmin();
 
-    // Replace today's tickets wholesale: this runs once a day.
+    // Replace today's tickets wholesale (both sets): this runs once a day.
     await admin.from('predictor_tickets').delete().eq('ticket_date', ticketDate);
 
-    for (const ticket of tickets) {
+    for (const ticket of all) {
       const t = await insertTolerant(
         admin,
         'predictor_tickets',
@@ -140,6 +162,7 @@ async function runPredictorJob(): Promise<NextResponse> {
       );
       const ticketId = t.data?.[0]?.id;
       if (t.error || !ticketId) continue;
+      saved.push({ ticket, id: ticketId });
 
       await insertTolerant(
         admin,
@@ -164,14 +187,31 @@ async function runPredictorJob(): Promise<NextResponse> {
     }
   } catch (err) {
     console.error('[predictor cron] Supabase persistence failed:', err);
-    return NextResponse.json({ error: 'Generated tickets but failed to save them', tickets }, { status: 500 });
+    return NextResponse.json({ error: 'Generated tickets but failed to save them', tickets: all }, { status: 500 });
+  }
+
+  // 4) Create booking codes, then attach them to the saved tickets (best-effort, time-boxed).
+  const codesStartedAt = Date.now();
+  let codesCreated = 0;
+  try {
+    codesCreated = await attachBookingCodes(all, startedAt + 54000);
+    const admin = getSupabaseAdmin();
+    await Promise.all(
+      saved
+        .filter(({ ticket }) => ticket.bookingCodes.length > 0)
+        .map(({ ticket, id }) => admin.from('predictor_tickets').update({ booking_codes: ticket.bookingCodes }).eq('id', id)),
+    );
+  } catch (err) {
+    console.error('[predictor cron] booking codes failed (tickets are saved):', err);
   }
 
   return NextResponse.json({
     ticketDate,
-    ...stats,
-    ticketsGenerated: tickets.length,
-    timingMs: { scan: scanMs, analysis: analysisMs, total: Date.now() - startedAt },
-    tickets,
+    bookmakerSet: { ...(bookmaker?.stats ?? { note: 'SportyBet feed unavailable' }), tickets: bookmakerTickets.length },
+    modelSet: { ...(model?.stats ?? { note: 'Fixture scan failed' }), tickets: modelTickets.length },
+    ticketsSaved: saved.length,
+    bookingCodesCreated: codesCreated,
+    timingMs: { scan: scanMs, analysis: analysisMs, codes: Date.now() - codesStartedAt, total: Date.now() - startedAt },
+    tickets: all,
   });
 }
