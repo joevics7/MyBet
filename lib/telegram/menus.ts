@@ -17,10 +17,10 @@ export type Keyboard = { inline_keyboard: Button[][] };
 
 const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || 'https://betmeter.com').replace(/\/$/, '');
 
-// Stake takes a share link rather than a booking code, and Bet9ja decoding
-// is known to fail from our server, so neither is offered in the pickers
-// (typing the platform by hand still works).
-const PICKER_EXCLUDED = new Set(['stake', 'bet9ja']);
+// Only platforms that decode correctly are offered. Tested 2026-10-10:
+// MSport, Stake and Bet9ja don't work (Stake also takes a share link, not a
+// booking code). Typing the platform by hand still works for them.
+const PICKER_EXCLUDED = new Set(['stake', 'bet9ja', 'msport']);
 export const PICKER_PLATFORMS = PLATFORMS.filter((p) => !PICKER_EXCLUDED.has(p.slug));
 
 // Tools that need more time than a chat reply allows (they score every
