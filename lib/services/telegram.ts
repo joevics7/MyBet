@@ -16,7 +16,7 @@ function getBotToken(): string {
 // never for text containing dynamic data (team names, user input, etc.)
 // -- a stray underscore or asterisk in a team name would otherwise make
 // the whole send fail with a 400 "can't parse entities" error.
-export async function sendMessage(chatId: number | string, text: string, parseMode?: 'Markdown' | 'HTML') {
+export async function sendMessage(chatId: number | string, text: string, parseMode?: 'Markdown' | 'HTML'): Promise<boolean> {
   const url = `${TELEGRAM_API_BASE}/bot${getBotToken()}/sendMessage`;
   const res = await fetch(url, {
     method: 'POST',
@@ -31,6 +31,7 @@ export async function sendMessage(chatId: number | string, text: string, parseMo
   if (!res.ok) {
     console.error('[telegram] sendMessage failed:', res.status, await res.text());
   }
+  return res.ok;
 }
 
 // Types for the subset of Telegram's Update object this bot reads.

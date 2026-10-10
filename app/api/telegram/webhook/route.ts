@@ -25,7 +25,8 @@ const WELCOME_TEXT = `Welcome to BetMeter!
 Paste any SportyBet booking code and I'll decode it for you. Or use:
 /decode <code> -- decodes a SportyBet code
 /decode <platform> <code> -- e.g. /decode bet9ja 5T6TLPN
-/link <code> -- links this chat to your BetMeter account, so Vault notifications land here (get a code from the website's Vault page)
+
+To use the Vault, open the Vault page on the website and tap "Connect with Telegram" -- I'll message you here whenever a saved code settles.
 
 More tools (confidence scores, splitting) are on the way here -- for the full set, visit the website.`;
 
@@ -65,10 +66,14 @@ async function handleDecodeCommand(chatId: number, args: string[]) {
   await sendMessage(chatId, `${result.selections.length} selections:\n\n${lines.join('\n\n')}${totalOddsLine}`);
 }
 
-async function handleLinkCommand(chatId: number, args: string[]) {
-  const code = args[0]?.toUpperCase();
-  if (!code) {
-    await sendMessage(chatId, "Send it like this: /link ABC123 (get a code from the website's Vault page).");
+// Website sign-in: the Vault page created a one-time token and sent the
+// user here via t.me/<bot>?start=login_<token>. Find/create their Telegram
+// account row, attach it to the token, and the website's poll picks it up.
+async function handleLoginStart(message: NonNullable<TelegramUpdate['message']>, token: string) {
+  const chatId = message.chat.id;
+
+  if (message.chat.type !== 'private' || !message.from || !/^[a-f0-9]{32}$/.test(token)) {
+    await sendMessage(chatId, 'That sign-in link is invalid -- go back to the Vault page and try again.');
     return;
   }
 
@@ -76,36 +81,58 @@ async function handleLinkCommand(chatId: number, args: string[]) {
   try {
     admin = getSupabaseAdmin();
   } catch {
-    await sendMessage(chatId, "Linking isn't available right now -- try again later.");
+    await sendMessage(chatId, "Sign-in isn't available right now -- try again later.");
     return;
   }
 
-  const { data: linkRow } = await admin
-    .from('telegram_link_codes')
-    .select('user_id, expires_at')
-    .eq('code', code)
+  const { data: tokenRow } = await admin
+    .from('telegram_login_tokens')
+    .select('token, expires_at, telegram_user_id')
+    .eq('token', token)
     .maybeSingle();
 
-  if (!linkRow || new Date(linkRow.expires_at).getTime() < Date.now()) {
-    await sendMessage(chatId, "That code is invalid or expired -- generate a new one on the website's Vault page.");
+  if (!tokenRow || tokenRow.telegram_user_id || new Date(tokenRow.expires_at).getTime() < Date.now()) {
+    await sendMessage(chatId, 'That sign-in link expired -- go back to the Vault page and tap Connect again.');
     return;
   }
 
-  // One link code is single-use -- delete it before anything else, so a
-  // retry or race can't link it twice.
-  await admin.from('telegram_link_codes').delete().eq('code', code);
+  const { data: user, error: userError } = await admin
+    .from('telegram_users')
+    .upsert(
+      {
+        telegram_id: message.from.id,
+        chat_id: chatId,
+        username: message.from.username ?? null,
+        first_name: message.from.first_name ?? null,
+        last_seen_at: new Date().toISOString(),
+      },
+      { onConflict: 'telegram_id' },
+    )
+    .select('id')
+    .single();
 
-  const { error } = await admin
-    .from('user_settings')
-    .upsert({ user_id: linkRow.user_id, telegram_chat_id: String(chatId) }, { onConflict: 'user_id' });
-
-  if (error) {
-    console.error('[telegram webhook] link upsert failed:', error);
-    await sendMessage(chatId, 'Something went wrong linking your account -- try again.');
+  if (userError || !user) {
+    console.error('[telegram webhook] user upsert failed:', userError);
+    await sendMessage(chatId, 'Something went wrong connecting your account -- try again.');
     return;
   }
 
-  await sendMessage(chatId, "Linked! I'll notify you here when your saved Vault codes settle.");
+  const { error: attachError } = await admin
+    .from('telegram_login_tokens')
+    .update({ telegram_user_id: user.id })
+    .eq('token', token)
+    .is('telegram_user_id', null);
+
+  if (attachError) {
+    console.error('[telegram webhook] token attach failed:', attachError);
+    await sendMessage(chatId, 'Something went wrong connecting your account -- try again.');
+    return;
+  }
+
+  await sendMessage(
+    chatId,
+    "\u2705 Connected! Go back to the Vault page -- you're signed in. I'll message you here whenever a saved code settles.",
+  );
 }
 
 export async function POST(req: NextRequest) {
@@ -129,14 +156,13 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    if (text === '/start' || text === '/help') {
+    if (text.startsWith('/start login_')) {
+      await handleLoginStart(message!, text.slice('/start login_'.length).trim());
+    } else if (text === '/start' || text === '/help') {
       await sendMessage(chatId, WELCOME_TEXT); // plain text -- WELCOME_TEXT uses <code>/<platform> as placeholder notation, which would conflict with an actual parse_mode
     } else if (text.startsWith('/decode')) {
       const args = text.split(/\s+/).slice(1);
       await handleDecodeCommand(chatId, args);
-    } else if (text.startsWith('/link')) {
-      const args = text.split(/\s+/).slice(1);
-      await handleLinkCommand(chatId, args);
     } else if (BOOKING_CODE_PATTERN.test(text)) {
       // Plain pasted code, no command -- assume SportyBet, the common case.
       await handleDecodeCommand(chatId, [text]);

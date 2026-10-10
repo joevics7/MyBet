@@ -16,10 +16,11 @@ export default function Page() {
       howItWorks={
         <>
           <p>
-            Sign in with just your email (no password), save a booking code, and check it once
-            every leg has kicked off. SportyBet codes check automatically against the same decode
-            data that powers the Decoder — Bet9ja codes can be saved but can&rsquo;t auto-check
-            yet, since Bet9ja doesn&rsquo;t report match results the way SportyBet does.
+            Connect your Telegram (no email, no password), save a booking code, and we&rsquo;ll
+            message you on Telegram the moment it settles. Saved codes are checked every hour.
+            SportyBet codes check automatically against the same decode data that powers the
+            Decoder &mdash; Bet9ja codes can be saved but can&rsquo;t auto-check yet, since Bet9ja
+            doesn&rsquo;t report match results the way SportyBet does.
           </p>
           <p>
             Results are shown plainly — a loss is labeled a loss, not softened or buried.

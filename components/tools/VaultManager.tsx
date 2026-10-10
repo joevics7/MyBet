@@ -1,12 +1,10 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import type { Session } from '@supabase/supabase-js';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Loader2, Plus, RefreshCw, LogOut, CheckCircle2, XCircle, Clock, HelpCircle, Send } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
-import { AuthForm } from '@/components/auth/AuthForm';
 
 const PLATFORMS = [{ slug: 'sportybet', label: 'SportyBet' }, { slug: 'bet9ja', label: 'Bet9ja' }];
+const POLL_INTERVAL_MS = 2000;
 
 interface VaultEntry {
   id: string;
@@ -16,6 +14,11 @@ interface VaultEntry {
   legs_correct: number | null;
   saved_at: string;
   platforms: { slug: string; name: string } | null;
+}
+
+interface VaultUser {
+  username: string | null;
+  firstName: string | null;
 }
 
 function StatusBadge({ status }: { status: VaultEntry['status'] }) {
@@ -34,8 +37,105 @@ function StatusBadge({ status }: { status: VaultEntry['status'] }) {
   );
 }
 
+function ConnectTelegram({ onConnected }: { onConnected: () => void }) {
+  const [starting, setStarting] = useState(false);
+  const [deepLink, setDeepLink] = useState<string | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const onConnectedRef = useRef(onConnected);
+  onConnectedRef.current = onConnected;
+
+  async function handleStart() {
+    setStarting(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/vault/auth/start', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || !data.deepLink) {
+        setError(data.error ?? 'Could not start sign-in. Try again.');
+        return;
+      }
+      setDeepLink(data.deepLink);
+      setToken(data.token);
+    } catch {
+      setError('Could not start sign-in. Try again.');
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  // Wait for the bot to confirm; the status route sets the session cookie.
+  useEffect(() => {
+    if (!token) return;
+    let stopped = false;
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/vault/auth/status?token=${token}`, { cache: 'no-store' });
+        const data = await res.json();
+        if (stopped) return;
+        if (data.status === 'ok') {
+          stopped = true;
+          clearInterval(timer);
+          onConnectedRef.current();
+        } else if (data.status === 'expired') {
+          stopped = true;
+          clearInterval(timer);
+          setToken(null);
+          setDeepLink(null);
+          setError('That sign-in link expired. Tap Connect to try again.');
+        }
+      } catch {
+        // transient network error -- keep polling
+      }
+    }, POLL_INTERVAL_MS);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [token]);
+
+  return (
+    <div className="rounded-sm border border-border bg-card p-6">
+      <div className="flex items-center gap-2 mb-1">
+        <Send className="h-4 w-4 text-[hsl(var(--seal))]" />
+        <p className="text-sm font-medium">Connect Telegram to use the Vault</p>
+      </div>
+      <p className="text-xs text-muted-foreground mb-4">
+        No email or password. Connect your Telegram and we&rsquo;ll message you there when a saved code settles.
+      </p>
+
+      {deepLink ? (
+        <div className="space-y-3">
+          <a
+            href={deepLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex h-10 items-center gap-2 rounded-sm bg-[hsl(var(--ink))] px-4 text-sm font-semibold text-[hsl(var(--paper))]"
+          >
+            <Send className="h-4 w-4" /> Open Telegram
+          </a>
+          <p className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Tap <span className="font-semibold">Start</span> in the bot, then come back here&hellip;
+          </p>
+        </div>
+      ) : (
+        <button
+          onClick={handleStart}
+          disabled={starting}
+          className="inline-flex h-10 items-center gap-2 rounded-sm bg-[hsl(var(--ink))] px-4 text-sm font-semibold text-[hsl(var(--paper))] disabled:opacity-50"
+        >
+          {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          Connect with Telegram
+        </button>
+      )}
+
+      {error && <p className="mt-3 text-xs text-[hsl(var(--rust))]">{error}</p>}
+    </div>
+  );
+}
+
 export function VaultManager() {
-  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<VaultUser | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [entries, setEntries] = useState<VaultEntry[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(false);
@@ -46,106 +146,64 @@ export function VaultManager() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [checkingId, setCheckingId] = useState<string | null>(null);
 
-  const [telegramLinked, setTelegramLinked] = useState<boolean | null>(null); // null = not checked yet
-  const [linkCode, setLinkCode] = useState<string | null>(null);
-  const [generatingLink, setGeneratingLink] = useState(false);
-
-  useEffect(() => {
-    if (!supabase) {
+  const loadMe = useCallback(async () => {
+    try {
+      const res = await fetch('/api/vault/me', { cache: 'no-store' });
+      const data = await res.json();
+      setUser(data.user ?? null);
+    } catch {
+      setUser(null);
+    } finally {
       setCheckingAuth(false);
-      return;
     }
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setCheckingAuth(false);
-    });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession);
-    });
-    return () => listener.subscription.unsubscribe();
   }, []);
 
   const loadEntries = useCallback(async () => {
-    if (!supabase || !session) return;
     setLoadingEntries(true);
-    const { data } = await supabase
-      .from('vault_entries')
-      .select('id, code, status, legs_total, legs_correct, saved_at, platforms(slug, name)')
-      .order('saved_at', { ascending: false });
-    setEntries((data as unknown as VaultEntry[]) ?? []);
-    setLoadingEntries(false);
-  }, [session]);
-
-  const checkTelegramLinked = useCallback(async () => {
-    if (!supabase || !session) return;
-    const { data } = await supabase
-      .from('user_settings')
-      .select('telegram_chat_id')
-      .eq('user_id', session.user.id)
-      .maybeSingle();
-    setTelegramLinked(!!data?.telegram_chat_id);
-  }, [session]);
+    try {
+      const res = await fetch('/api/vault/entries', { cache: 'no-store' });
+      if (res.status === 401) {
+        setUser(null);
+        return;
+      }
+      const data = await res.json();
+      setEntries(data.entries ?? []);
+    } finally {
+      setLoadingEntries(false);
+    }
+  }, []);
 
   useEffect(() => {
-    if (session) {
-      loadEntries();
-      checkTelegramLinked();
-    }
-  }, [session, loadEntries, checkTelegramLinked]);
+    loadMe();
+  }, [loadMe]);
 
-  async function handleGenerateLinkCode() {
-    if (!session) return;
-    setGeneratingLink(true);
-    try {
-      const res = await fetch('/api/telegram/link', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-      const data = await res.json();
-      if (data.code) setLinkCode(data.code);
-    } finally {
-      setGeneratingLink(false);
-    }
-  }
+  useEffect(() => {
+    if (user) loadEntries();
+  }, [user, loadEntries]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!code.trim() || !supabase || !session) return;
+    if (!code.trim()) return;
 
     setSaving(true);
     setSaveError(null);
-
     try {
-      const decodeRes = await fetch('/api/decode', {
+      const res = await fetch('/api/vault/entries', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ platform, code: code.trim() }),
       });
-      const decoded = await decodeRes.json();
-
-      if (decoded.status !== 'ok') {
-        setSaveError("Couldn't decode that code — check it's correct.");
+      const data = await res.json();
+      if (res.status === 401) {
+        setUser(null);
         return;
       }
-
-      const { error } = await supabase.from('vault_entries').insert({
-        user_id: session.user.id,
-        platform_id: decoded.platformId,
-        code: code.trim(),
-        decode_id: decoded.decodeId,
-        legs_total: decoded.selections.length,
-        status: 'pending',
-      });
-
-      if (error) {
-        // Unique constraint (user_id, platform_id, code) -- already saved.
-        setSaveError(
-          error.code === '23505' ? "You've already saved this code." : "Couldn't save that entry.",
-        );
-      } else {
-        setCode('');
-        loadEntries();
+      if (!res.ok) {
+        setSaveError(data.error ?? "Couldn't save that entry.");
+        return;
       }
+      setCode('');
+      loadEntries();
     } catch {
       setSaveError('Something went wrong. Try again.');
     } finally {
@@ -154,15 +212,11 @@ export function VaultManager() {
   }
 
   async function handleCheck(entryId: string) {
-    if (!session) return;
     setCheckingId(entryId);
     try {
       await fetch('/api/vault/check', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ entryId }),
       });
       await loadEntries();
@@ -172,8 +226,9 @@ export function VaultManager() {
   }
 
   async function handleSignOut() {
-    if (!supabase) return;
-    await supabase.auth.signOut();
+    await fetch('/api/vault/auth/logout', { method: 'POST' });
+    setUser(null);
+    setEntries([]);
   }
 
   if (checkingAuth) {
@@ -184,72 +239,28 @@ export function VaultManager() {
     );
   }
 
-  if (!supabase) {
-    return (
-      <div className="rounded-sm border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">
-        The Vault needs Supabase configured to work.
-      </div>
-    );
+  if (!user) {
+    return <ConnectTelegram onConnected={loadMe} />;
   }
 
-  if (!session) {
-    return <AuthForm />;
-  }
+  const displayName = user.username ? `@${user.username}` : user.firstName ?? 'Telegram user';
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground truncate">{session.user.email}</p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="min-w-0 text-xs text-muted-foreground truncate">Connected as {displayName}</p>
         <button
           onClick={handleSignOut}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-[hsl(var(--rust))]"
+          className="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-[hsl(var(--rust))]"
         >
-          <LogOut className="h-3.5 w-3.5" /> Sign out
+          <LogOut className="h-3.5 w-3.5" /> Disconnect
         </button>
       </div>
 
-      {telegramLinked === false && (
-        <div className="rounded-sm border border-border bg-muted/40 p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <Send className="h-4 w-4 text-[hsl(var(--seal))]" />
-            <p className="text-sm font-medium">Get notified on Telegram when a code settles</p>
-          </div>
-          {linkCode ? (
-            <div className="mt-2">
-              <p className="text-xs text-muted-foreground">
-                Message{' '}
-                <a
-                  href={process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL || 'https://t.me/BetsMeterBot'}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[hsl(var(--verified))] underline"
-                >
-                  our Telegram bot
-                </a>{' '}
-                with:
-              </p>
-              <p className="mt-1 font-mono text-sm bg-background border border-border rounded-sm px-3 py-1.5 inline-block">
-                /link {linkCode}
-              </p>
-              <p className="mt-1 text-[11px] text-muted-foreground">Expires in 10 minutes.</p>
-            </div>
-          ) : (
-            <button
-              onClick={handleGenerateLinkCode}
-              disabled={generatingLink}
-              className="mt-2 text-xs font-semibold text-[hsl(var(--verified))] disabled:opacity-50"
-            >
-              {generatingLink ? 'Generating...' : 'Get a link code'}
-            </button>
-          )}
-        </div>
-      )}
-      {telegramLinked === true && (
-        <div className="rounded-sm border border-border bg-muted/40 p-4 flex items-center gap-2">
-          <CheckCircle2 className="h-4 w-4 text-[hsl(var(--verified))]" />
-          <p className="text-sm">Telegram notifications are on for this account.</p>
-        </div>
-      )}
+      <div className="rounded-sm border border-border bg-muted/40 p-4 flex items-center gap-2">
+        <CheckCircle2 className="h-4 w-4 shrink-0 text-[hsl(var(--verified))]" />
+        <p className="text-sm">Telegram alerts are on. Saved codes are checked hourly.</p>
+      </div>
 
       <form onSubmit={handleSave} className="rounded-sm border border-border bg-card p-5 space-y-3">
         <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Save a code</p>
