@@ -93,7 +93,7 @@ export function DecoderForm() {
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="e.g. P79BMH"
-              className="flex-1 h-10 rounded-sm border border-border bg-background px-3 text-sm font-mono uppercase"
+              className="flex-1 min-w-0 h-10 rounded-sm border border-border bg-background px-3 text-sm font-mono uppercase"
             />
             <button
               type="submit"

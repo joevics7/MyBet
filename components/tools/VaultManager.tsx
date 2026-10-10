@@ -257,7 +257,7 @@ export function VaultManager() {
           <select
             value={platform}
             onChange={(e) => setPlatform(e.target.value)}
-            className="h-10 rounded-sm border border-border bg-background px-2 text-sm"
+            className="h-10 min-w-0 max-w-[38%] rounded-sm border border-border bg-background px-2 text-sm"
           >
             {PLATFORMS.map((p) => (
               <option key={p.slug} value={p.slug}>{p.label}</option>
@@ -267,7 +267,7 @@ export function VaultManager() {
             value={code}
             onChange={(e) => setCode(e.target.value)}
             placeholder="Booking code"
-            className="flex-1 h-10 rounded-sm border border-border bg-background px-3 text-sm font-mono uppercase"
+            className="flex-1 min-w-0 h-10 rounded-sm border border-border bg-background px-3 text-sm font-mono uppercase"
           />
           <button
             type="submit"

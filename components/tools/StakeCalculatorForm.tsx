@@ -177,7 +177,7 @@ export function StakeCalculatorForm() {
                 value={row.odds}
                 onChange={(e) => updateRow(row.id, 'odds', e.target.value)}
                 placeholder="Odds e.g. 1.85"
-                className="flex-1 h-9 rounded-sm border border-border bg-background px-2.5 text-sm"
+                className="flex-1 min-w-0 h-9 rounded-sm border border-border bg-background px-2.5 text-sm"
               />
               <input
                 type="number"
@@ -186,7 +186,7 @@ export function StakeCalculatorForm() {
                 value={row.confidence}
                 onChange={(e) => updateRow(row.id, 'confidence', e.target.value)}
                 placeholder="Confidence %"
-                className="w-28 h-9 rounded-sm border border-border bg-background px-2.5 text-sm"
+                className="w-24 sm:w-28 min-w-0 shrink-0 h-9 rounded-sm border border-border bg-background px-2.5 text-sm"
               />
               <button
                 type="button"

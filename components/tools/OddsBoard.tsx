@@ -61,7 +61,7 @@ export function OddsBoard() {
 
   return (
     <div className="rounded-sm border border-border bg-card p-4 sm:p-6">
-      <div className="flex gap-2 overflow-x-auto pb-2">
+      <div className="flex gap-2 overflow-x-auto max-w-full min-w-0 pb-2">
         {chips.map((c, i) => (
           <button
             key={c.from}
