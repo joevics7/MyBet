@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { sendMessage, type TelegramUpdate } from '@/lib/services/telegram';
+import { sendMessage, answerCallbackQuery, type TelegramMessage, type TelegramUpdate } from '@/lib/services/telegram';
 import { decodeSportyBetCode } from '@/lib/services/sportybet';
 import { decodeBet9jaCode } from '@/lib/services/bet9ja';
 import type { DecodeResult } from '@/lib/services/types';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
-import { getPlatform } from '@/lib/services/platforms';
+import { getPlatform, PLATFORMS } from '@/lib/services/platforms';
 import { saveVaultEntry } from '@/lib/services/vaultSave';
 
 export const runtime = 'nodejs';
@@ -29,6 +29,7 @@ Paste any SportyBet booking code and I'll decode it for you. Or use:
 /decode <platform> <code> -- e.g. /decode bet9ja 5T6TLPN
 
 Save codes to your Vault right here:
+/save -- pick a platform, then send your code
 /save <code> -- saves a SportyBet code
 /save <platform> <code> -- e.g. /save footballcom ABC123
 I'll message you here whenever a saved code settles. (You can also manage your Vault on the website.)
@@ -140,26 +141,64 @@ async function handleLoginStart(message: NonNullable<TelegramUpdate['message']>,
   );
 }
 
-// /save <code> or /save <platform> <code>. Telegram itself is the identity,
-// so the first /save from someone who never opened the website just creates
-// their account row. Private chats only: alerts go to this chat, so it must
-// be the user's own DM.
-async function handleSaveCommand(message: NonNullable<TelegramUpdate['message']>, args: string[]) {
+// Platforms offered by the /save picker. Stake takes a share link rather
+// than a booking code, and Bet9ja decoding is known to fail from our server,
+// so neither is offered here (/save bet9ja <code> still works by hand).
+const PICKER_EXCLUDED = new Set(['stake', 'bet9ja']);
+const PICKER_PLATFORMS = PLATFORMS.filter((p) => !PICKER_EXCLUDED.has(p.slug));
+
+// The code prompt carries the platform's label, and Telegram sends it back
+// as reply_to_message when the user answers -- that's how we know which
+// platform the code is for without storing any conversation state.
+const CODE_PROMPT_PREFIX = 'Send your ';
+const CODE_PROMPT_SUFFIX = ' booking code';
+
+async function sendPlatformPicker(chatId: number) {
+  const buttons = PICKER_PLATFORMS.map((p) => ({ text: p.label, callback_data: `save:${p.slug}` }));
+  const rows: { text: string; callback_data: string }[][] = [];
+  for (let i = 0; i < buttons.length; i += 2) rows.push(buttons.slice(i, i + 2));
+  await sendMessage(chatId, 'Which platform is the code from?', undefined, { inline_keyboard: rows });
+}
+
+async function sendCodePrompt(chatId: number, slug: string) {
+  const platform = getPlatform(slug);
+  if (!platform) return;
+  await sendMessage(chatId, `${CODE_PROMPT_PREFIX}${platform.label}${CODE_PROMPT_SUFFIX} (reply to this message).`, undefined, {
+    force_reply: true,
+    input_field_placeholder: 'Booking code',
+  });
+}
+
+async function handleSaveButton(query: NonNullable<TelegramUpdate['callback_query']>) {
+  await answerCallbackQuery(query.id);
+  const chat = query.message?.chat;
+  const slug = query.data?.slice('save:'.length);
+  if (!chat || chat.type !== 'private' || !slug || !getPlatform(slug)) return;
+  await sendCodePrompt(chat.id, slug);
+}
+
+// If this message is a reply to one of our code prompts, return the
+// platform slug it was for.
+function platformFromCodePrompt(message: TelegramMessage): string | null {
+  const prompt = message.reply_to_message?.text;
+  if (!prompt?.startsWith(CODE_PROMPT_PREFIX)) return null;
+  const label = prompt.slice(CODE_PROMPT_PREFIX.length).split(CODE_PROMPT_SUFFIX)[0];
+  return PLATFORMS.find((p) => p.label === label)?.slug ?? null;
+}
+
+// Saves a code for whoever sent the message. Telegram itself is the
+// identity, so the first save from someone who never opened the website
+// just creates their account row. Private chats only: alerts go to this
+// chat, so it must be the user's own DM.
+async function saveCodeForSender(message: TelegramMessage, platformSlug: string, code: string) {
   const chatId = message.chat.id;
 
   if (message.chat.type !== 'private' || !message.from) {
     await sendMessage(chatId, 'Message me directly to save codes to your Vault.');
     return;
   }
-  if (args.length === 0 || args.length > 2) {
-    await sendMessage(chatId, 'Send a booking code like this: /save P79BMH or /save footballcom ABC123');
-    return;
-  }
-
-  const platformSlug = args.length === 2 ? args[0] : 'sportybet';
-  const code = args.length === 2 ? args[1] : args[0];
   if (!getPlatform(platformSlug)) {
-    await sendMessage(chatId, `I don't support "${platformSlug}" yet. Try /save <code> for SportyBet.`);
+    await sendMessage(chatId, `I don't support "${platformSlug}" yet. Send /save to see the platforms I can save.`);
     return;
   }
 
@@ -196,6 +235,30 @@ async function handleSaveCommand(message: NonNullable<TelegramUpdate['message']>
   await sendMessage(chatId, result.ok ? result.confirmation : result.error);
 }
 
+// /save            -> platform buttons, then a prompt for the code
+// /save <code>     -> SportyBet shortcut
+// /save <platform> <code>
+async function handleSaveCommand(message: TelegramMessage, args: string[]) {
+  const chatId = message.chat.id;
+
+  if (message.chat.type !== 'private' || !message.from) {
+    await sendMessage(chatId, 'Message me directly to save codes to your Vault.');
+    return;
+  }
+  if (args.length === 0) {
+    await sendPlatformPicker(chatId);
+    return;
+  }
+  if (args.length > 2) {
+    await sendMessage(chatId, 'Send /save on its own and I\'ll walk you through it.');
+    return;
+  }
+
+  const platformSlug = args.length === 2 ? args[0] : 'sportybet';
+  const code = args.length === 2 ? args[1] : args[0];
+  await saveCodeForSender(message, platformSlug, code);
+}
+
 export async function POST(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -208,6 +271,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true }); // malformed body -- ack anyway, nothing to retry
   }
 
+  if (update.callback_query) {
+    try {
+      if (update.callback_query.data?.startsWith('save:')) await handleSaveButton(update.callback_query);
+      else await answerCallbackQuery(update.callback_query.id);
+    } catch (err) {
+      console.error('[telegram webhook] callback error:', err);
+    }
+    return NextResponse.json({ ok: true });
+  }
+
   const message = update.message;
   const chatId = message?.chat?.id;
   const text = message?.text?.trim();
@@ -217,7 +290,10 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    if (text.startsWith('/start login_')) {
+    const replyPlatform = text.startsWith('/') ? null : platformFromCodePrompt(message!);
+    if (replyPlatform) {
+      await saveCodeForSender(message!, replyPlatform, text);
+    } else if (text.startsWith('/start login_')) {
       await handleLoginStart(message!, text.slice('/start login_'.length).trim());
     } else if (text === '/start' || text === '/help') {
       await sendMessage(chatId, WELCOME_TEXT); // plain text -- WELCOME_TEXT uses <code>/<platform> as placeholder notation, which would conflict with an actual parse_mode
