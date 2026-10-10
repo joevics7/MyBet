@@ -40,6 +40,37 @@ export async function sendMessage(
   return res.ok;
 }
 
+// Swaps the text/buttons of a message in place (menu navigation without
+// flooding the chat). Falls back to a fresh message if Telegram refuses the
+// edit (message too old, identical content, etc).
+export async function editMessage(
+  chatId: number | string,
+  messageId: number,
+  text: string,
+  replyMarkup?: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const res = await fetch(`${TELEGRAM_API_BASE}/bot${getBotToken()}/editMessageText`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_id: messageId,
+        text,
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+        disable_web_page_preview: true,
+      }),
+    });
+    if (res.ok) return;
+    const body = await res.text();
+    if (body.includes('message is not modified')) return;
+    console.error('[telegram] editMessage failed, sending new message:', res.status, body);
+  } catch (err) {
+    console.error('[telegram] editMessage failed, sending new message:', err);
+  }
+  await sendMessage(chatId, text, undefined, replyMarkup);
+}
+
 // Stops the loading spinner on an inline button after it's tapped.
 export async function answerCallbackQuery(callbackQueryId: string): Promise<void> {
   try {

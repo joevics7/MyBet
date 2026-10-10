@@ -1,40 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { sendMessage, answerCallbackQuery, type TelegramMessage, type TelegramUpdate } from '@/lib/services/telegram';
-import { decodeSportyBetCode } from '@/lib/services/sportybet';
-import { decodeBet9jaCode } from '@/lib/services/bet9ja';
-import type { DecodeResult } from '@/lib/services/types';
+import { sendMessage, editMessage, answerCallbackQuery, type TelegramMessage, type TelegramUpdate } from '@/lib/services/telegram';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { getPlatform, PLATFORMS } from '@/lib/services/platforms';
 import { saveVaultEntry } from '@/lib/services/vaultSave';
+import {
+  MAIN_MENU_TEXT,
+  mainMenu,
+  platformPicker,
+  predictorAnalysis,
+  predictorBands,
+  predictorHome,
+  predictorTicket,
+  vaultSummary,
+  websiteToolView,
+} from '@/lib/telegram/menus';
 
 export const runtime = 'nodejs';
 export const maxDuration = 20;
 
-// v1 scope: decode only, no confidence scoring. Scoring each selection
-// (football-data.org + Gemini, throttled) is what made /api/decode take
-// several seconds -- fine for a web page with a loading spinner, risky
-// inside a chat bot where a slow reply reads as broken. Decode-only
-// replies in ~1-2s. Scoring can be added once there's a clear answer for
-// how to keep response time acceptable (e.g. "send now, score async,
-// edit the message after" -- not built yet).
-const DECODERS: Record<string, (code: string) => Promise<DecodeResult>> = {
-  sportybet: decodeSportyBetCode,
-  bet9ja: decodeBet9jaCode,
-};
-
 const WELCOME_TEXT = `Welcome to BetMeter!
 
-Paste any SportyBet booking code and I'll decode it for you. Or use:
-/decode <code> -- decodes a SportyBet code
-/decode <platform> <code> -- e.g. /decode bet9ja 5T6TLPN
+Tap a tool below, or use commands:
+/menu -- show this menu
+/decode <code> -- decode a SportyBet code (or /decode <platform> <code>)
+/save -- pick a platform, then send your code to save it
+/save <code> or /save <platform> <code> -- save in one go
 
-Save codes to your Vault right here:
-/save -- pick a platform, then send your code
-/save <code> -- saves a SportyBet code
-/save <platform> <code> -- e.g. /save footballcom ABC123
-I'll message you here whenever a saved code settles. (You can also manage your Vault on the website.)
-
-More tools (confidence scores, splitting) are on the way here -- for the full set, visit the website.`;
+You can also just paste a SportyBet booking code and I'll decode it. I'll message you here whenever a saved code settles.`;
 
 const BOOKING_CODE_PATTERN = /^[A-Z0-9]{5,10}$/i;
 
@@ -46,20 +38,25 @@ function isAuthorized(req: NextRequest): boolean {
 
 async function handleDecodeCommand(chatId: number, args: string[]) {
   if (args.length === 0) {
-    await sendMessage(chatId, 'Send a booking code like this: /decode P79BMH or /decode bet9ja 5T6TLPN');
+    await sendPlatformPrompt(chatId);
     return;
   }
 
-  const platform = args.length >= 2 ? args[0].toLowerCase() : 'sportybet';
+  const platformSlug = args.length >= 2 ? args[0].toLowerCase() : 'sportybet';
   const code = args.length >= 2 ? args[1] : args[0];
+  await decodeAndReply(chatId, platformSlug, code);
+}
 
-  const decoder = DECODERS[platform];
-  if (!decoder) {
-    await sendMessage(chatId, `I don't support "${platform}" yet -- only sportybet and bet9ja for now.`);
+// Decode-only (no confidence scoring): scoring every leg is what made the
+// website's decode take several seconds, which reads as broken in a chat.
+async function decodeAndReply(chatId: number, platformSlug: string, code: string) {
+  const platform = getPlatform(platformSlug);
+  if (!platform) {
+    await sendMessage(chatId, `I don't support "${platformSlug}" yet. Send /decode to pick from the platforms I can read.`);
     return;
   }
 
-  const result = await decoder(code);
+  const result = await platform.decode(code);
   if (result.status !== 'ok') {
     await sendMessage(chatId, "Couldn't decode that code -- check it's correct and try again.");
     return;
@@ -141,49 +138,88 @@ async function handleLoginStart(message: NonNullable<TelegramUpdate['message']>,
   );
 }
 
-// Platforms offered by the /save picker. Stake takes a share link rather
-// than a booking code, and Bet9ja decoding is known to fail from our server,
-// so neither is offered here (/save bet9ja <code> still works by hand).
-const PICKER_EXCLUDED = new Set(['stake', 'bet9ja']);
-const PICKER_PLATFORMS = PLATFORMS.filter((p) => !PICKER_EXCLUDED.has(p.slug));
+// A code prompt names the platform and the action, and Telegram sends it
+// back as reply_to_message when the user answers -- that's how we know what
+// the code is for without storing any conversation state.
+const CODE_PROMPT_PATTERN = /^Send your (.+) booking code to (save|decode)\b/;
 
-// The code prompt carries the platform's label, and Telegram sends it back
-// as reply_to_message when the user answers -- that's how we know which
-// platform the code is for without storing any conversation state.
-const CODE_PROMPT_PREFIX = 'Send your ';
-const CODE_PROMPT_SUFFIX = ' booking code';
-
-async function sendPlatformPicker(chatId: number) {
-  const buttons = PICKER_PLATFORMS.map((p) => ({ text: p.label, callback_data: `save:${p.slug}` }));
-  const rows: { text: string; callback_data: string }[][] = [];
-  for (let i = 0; i < buttons.length; i += 2) rows.push(buttons.slice(i, i + 2));
-  await sendMessage(chatId, 'Which platform is the code from?', undefined, { inline_keyboard: rows });
-}
-
-async function sendCodePrompt(chatId: number, slug: string) {
+async function sendCodePrompt(chatId: number, slug: string, action: 'save' | 'decode') {
   const platform = getPlatform(slug);
   if (!platform) return;
-  await sendMessage(chatId, `${CODE_PROMPT_PREFIX}${platform.label}${CODE_PROMPT_SUFFIX} (reply to this message).`, undefined, {
+  await sendMessage(chatId, `Send your ${platform.label} booking code to ${action} (reply to this message).`, undefined, {
     force_reply: true,
     input_field_placeholder: 'Booking code',
   });
 }
 
-async function handleSaveButton(query: NonNullable<TelegramUpdate['callback_query']>) {
-  await answerCallbackQuery(query.id);
-  const chat = query.message?.chat;
-  const slug = query.data?.slice('save:'.length);
-  if (!chat || chat.type !== 'private' || !slug || !getPlatform(slug)) return;
-  await sendCodePrompt(chat.id, slug);
+async function sendPlatformPicker(chatId: number) {
+  await sendMessage(chatId, 'Which platform is the code from?', undefined, platformPicker('save'));
 }
 
-// If this message is a reply to one of our code prompts, return the
-// platform slug it was for.
-function platformFromCodePrompt(message: TelegramMessage): string | null {
-  const prompt = message.reply_to_message?.text;
-  if (!prompt?.startsWith(CODE_PROMPT_PREFIX)) return null;
-  const label = prompt.slice(CODE_PROMPT_PREFIX.length).split(CODE_PROMPT_SUFFIX)[0];
-  return PLATFORMS.find((p) => p.label === label)?.slug ?? null;
+async function sendPlatformPrompt(chatId: number) {
+  await sendMessage(chatId, 'Which platform is the code from?', undefined, platformPicker('dec'));
+}
+
+// If this message is a reply to one of our code prompts, say which platform
+// and action it was for.
+function codePromptTarget(message: TelegramMessage): { slug: string; action: 'save' | 'decode' } | null {
+  const m = message.reply_to_message?.text?.match(CODE_PROMPT_PATTERN);
+  if (!m) return null;
+  const slug = PLATFORMS.find((p) => p.label === m[1])?.slug;
+  return slug ? { slug, action: m[2] as 'save' | 'decode' } : null;
+}
+
+// Button taps. The main menu and the Predictor list edit the tapped message
+// in place; results (a ticket, an analysis, a decode) arrive as new messages.
+async function handleCallback(query: NonNullable<TelegramUpdate['callback_query']>) {
+  await answerCallbackQuery(query.id);
+  const chat = query.message?.chat;
+  const messageId = query.message?.message_id;
+  const data = query.data ?? '';
+  if (!chat || !messageId) return;
+  const chatId = chat.id;
+  const show = (text: string, keyboard: Record<string, unknown>) => editMessage(chatId, messageId, text, keyboard);
+
+  const [route, a, b] = data.split(':');
+
+  if (route === 'm') {
+    if (a === 'home') return show(MAIN_MENU_TEXT, mainMenu());
+    if (a === 'pred') {
+      const v = predictorHome();
+      return show(v.text, v.keyboard);
+    }
+    if (a === 'decode') return show('Which platform is the code from?', platformPicker('dec'));
+    if (a === 'save') return show('Which platform is the code from?', platformPicker('save'));
+    if (a === 'link') {
+      const v = websiteToolView(b);
+      if (v) return show(v.text, v.keyboard);
+      return;
+    }
+    if (a === 'vault') {
+      const v = await vaultSummary(getSupabaseAdmin(), query.from.id);
+      return show(v.text, v.keyboard);
+    }
+    return;
+  }
+
+  if (route === 'pred') {
+    const v = await predictorBands(getSupabaseAdmin(), a);
+    return show(v.text, v.keyboard);
+  }
+  if (route === 'pt') {
+    const v = await predictorTicket(getSupabaseAdmin(), a, b);
+    return show(v.text, v.keyboard);
+  }
+  if (route === 'pa') {
+    for (const chunk of await predictorAnalysis(getSupabaseAdmin(), a, b)) await sendMessage(chatId, chunk);
+    return;
+  }
+
+  // Code prompts need the user's own DM -- a reply in a group wouldn't be
+  // attributed or alerted correctly.
+  if ((route === 'save' || route === 'dec') && chat.type === 'private' && getPlatform(a)) {
+    return sendCodePrompt(chatId, a, route === 'save' ? 'save' : 'decode');
+  }
 }
 
 // Saves a code for whoever sent the message. Telegram itself is the
@@ -273,8 +309,7 @@ export async function POST(req: NextRequest) {
 
   if (update.callback_query) {
     try {
-      if (update.callback_query.data?.startsWith('save:')) await handleSaveButton(update.callback_query);
-      else await answerCallbackQuery(update.callback_query.id);
+      await handleCallback(update.callback_query);
     } catch (err) {
       console.error('[telegram webhook] callback error:', err);
     }
@@ -290,13 +325,16 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const replyPlatform = text.startsWith('/') ? null : platformFromCodePrompt(message!);
-    if (replyPlatform) {
-      await saveCodeForSender(message!, replyPlatform, text);
+    const replyTarget = text.startsWith('/') ? null : codePromptTarget(message!);
+    if (replyTarget) {
+      if (replyTarget.action === 'save') await saveCodeForSender(message!, replyTarget.slug, text);
+      else await decodeAndReply(chatId, replyTarget.slug, text);
     } else if (text.startsWith('/start login_')) {
       await handleLoginStart(message!, text.slice('/start login_'.length).trim());
     } else if (text === '/start' || text === '/help') {
-      await sendMessage(chatId, WELCOME_TEXT); // plain text -- WELCOME_TEXT uses <code>/<platform> as placeholder notation, which would conflict with an actual parse_mode
+      await sendMessage(chatId, WELCOME_TEXT, undefined, mainMenu()); // plain text -- WELCOME_TEXT uses <code>/<platform> as placeholder notation, which would conflict with an actual parse_mode
+    } else if (/^\/menu(@\w+)?$/i.test(text)) {
+      await sendMessage(chatId, MAIN_MENU_TEXT, undefined, mainMenu());
     } else if (/^\/save(@\w+)?(\s|$)/i.test(text)) {
       await handleSaveCommand(message!, text.split(/\s+/).slice(1));
     } else if (text.startsWith('/decode')) {
@@ -306,7 +344,7 @@ export async function POST(req: NextRequest) {
       // Plain pasted code, no command -- assume SportyBet, the common case.
       await handleDecodeCommand(chatId, [text]);
     } else {
-      await sendMessage(chatId, "I didn't understand that. Send /help, or just paste a SportyBet booking code.");
+      await sendMessage(chatId, "I didn't understand that. Send /menu, or just paste a SportyBet booking code.");
     }
   } catch (err) {
     console.error('[telegram webhook] handler error:', err);
