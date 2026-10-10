@@ -41,13 +41,11 @@ async function getTodaysTickets(): Promise<PredictorTicket[] | null> {
 
 export default async function Page() {
   const tickets = await getTodaysTickets();
-  const hasTickets = tickets !== null && tickets.length > 0;
-
   return (
     <ToolPageShell
       title="Daily AI Predictor"
       tagline="Two sets of daily tickets, one per odds band, built from the day's highest-confidence selections."
-      status={hasTickets ? 'live' : 'soon'}
+      status="live" // the empty state below explains when today's tickets aren't published yet
       howItWorks={
         <p>
           Once a day, the day&rsquo;s games are scored by the same Confidence Engine as the Decoder, using each
