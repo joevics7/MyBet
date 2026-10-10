@@ -1,14 +1,11 @@
 // OPERATING NOTES -- Confidence Score (Tipster Score part)
-// - Target: Statarea, PredictZ and Forebet are fetched ONCE A DAY, stored, and
-//   every confidence score is calculated from that stored data. A decode never
-//   fetches those sites itself.
-// - STATUS: not built that way yet.
-//     * Forebet: not implemented (only Statarea and PredictZ exist).
-//     * Statarea/PredictZ are currently fetched LIVE on every decode request
-//       (PredictZ through ZenRows, which costs credits and adds seconds per
-//       decode). Moving to a daily stored fetch means a daily job that saves
-//       the predictions to a table, and fetchTipsterSources() reading that
-//       table instead of the sites; the matching code below stays as-is.
+// - Tipster sites are fetched ONCE A DAY by /api/cron/tipster-refresh (Vercel
+//   Cron, 04:00 UTC, rolling 3-day window) and stored in tipster_predictions.
+//   A decode never fetches those sites itself: it reads the stored rows
+//   (getCachedTipsterSources) and calculates the score from them.
+// - Sources: Statarea and PredictZ are built. Forebet is NOT: forebet.ts only
+//   does a raw fetch, and no parser is written until real fetched content has
+//   been inspected (see predictz.ts history for why).
 // - BetMeter Score (our own model) is separate: it uses team form from
 //   API-Football, which is cached for 6 hours.
 
@@ -29,11 +26,12 @@
 // single-selection code.
 
 import type { MarketSelector } from './confidenceEngine';
-import { fetchStatareaPredictions, type StatareaPrediction } from './statarea';
+import type { StatareaPrediction } from './statarea';
 import { findStatareaMatch } from './statareaMatcher';
-import { fetchPredictzPredictions, type PredictzPrediction } from './predictz';
+import type { PredictzPrediction } from './predictz';
 import { findPredictzMatch } from './predictzMatcher';
 import { deriveMarketFromScore } from './scoreToMarkets';
+import { getCachedTipsterSources } from './tipsterCache';
 
 export interface TipsterConsensusResult {
   score: number | null; // 0-100, averaged across matched sources; null if none matched
@@ -47,25 +45,17 @@ export interface TipsterSourceData {
 
 // Call ONCE per decode request (or per Predictor batch run), before
 // scoring any individual selections -- pass every DISTINCT kickoff date
-// present across all selections, not just one. A slip spanning multiple
-// days (common) needs Statarea fetched once per distinct date; scoping
-// to only the first selection's date silently loses matches for every
-// other date -- that happened in production and is what this fixes.
-// Still cheap: bounded by distinct dates in the slip (typically 1-4),
-// not by selection count. Each fetch is independently fault-tolerant.
+// present across all selections. Reads from the tipster_predictions
+// CACHE (populated by the daily /api/cron/tipster-refresh job), not a
+// live fetch -- that's the actual fix for the per-request ZenRows/
+// Statarea cost that was happening before this cache existed. A date
+// with no cached data (cron hasn't covered it yet) simply contributes
+// nothing for that date, same as any other "not covered" case.
 export async function fetchTipsterSources(kickoffDates: string[] = []): Promise<TipsterSourceData> {
   const uniqueDates = Array.from(new Set(kickoffDates.filter(Boolean)));
-  const datesToFetch = uniqueDates.length > 0 ? uniqueDates : [undefined]; // undefined = Statarea's own "today" default
+  if (uniqueDates.length === 0) return { statarea: [], predictz: [] };
 
-  const [statareaSettled, predictzSettled] = await Promise.all([
-    Promise.allSettled(datesToFetch.map((d) => fetchStatareaPredictions(d))),
-    Promise.allSettled([fetchPredictzPredictions()]),
-  ]);
-
-  const statarea = statareaSettled.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
-  const predictz = predictzSettled[0].status === 'fulfilled' ? predictzSettled[0].value : [];
-
-  return { statarea, predictz };
+  return getCachedTipsterSources(uniqueDates);
 }
 
 function getStatareaProbability(prediction: StatareaPrediction, market: MarketSelector): number | null {
@@ -113,9 +103,25 @@ export function matchTipsterConsensus(
   }
 
   const predictzMatch = findPredictzMatch(homeTeam, awayTeam, sources.predictz);
-  if (predictzMatch?.predictedScore) {
-    const derived = deriveMarketFromScore(predictzMatch.predictedScore, market);
-    if (derived !== null) scores.push({ source: 'predictz', score: derived * 100 });
+  if (predictzMatch) {
+    // Prefer real decimal-odds-implied probability for 1X2 (continuous,
+    // richer signal) when Predictz gave odds; this is the one market it
+    // publishes odds for. Falls back to the derived-score 0/1 signal for
+    // BTTS/Over-Under (no odds given for those) or if 1X2 odds are missing.
+    if (market.type === '1X2' && predictzMatch.oddsHome && predictzMatch.oddsDraw && predictzMatch.oddsAway) {
+      const odds =
+        market.pick === 'home' ? predictzMatch.oddsHome : market.pick === 'draw' ? predictzMatch.oddsDraw : predictzMatch.oddsAway;
+      if (odds > 0) {
+        // Decimal-odds implied probability (1/odds) includes the
+        // bookmaker's margin and isn't normalized across all three
+        // outcomes -- a rough signal, not a true probability, but still
+        // meaningfully richer than a binary derived guess.
+        scores.push({ source: 'predictz', score: Math.round((1 / odds) * 100) });
+      }
+    } else if (predictzMatch.predictedScore) {
+      const derived = deriveMarketFromScore(predictzMatch.predictedScore, market);
+      if (derived !== null) scores.push({ source: 'predictz', score: derived * 100 });
+    }
   }
 
   if (scores.length === 0) return { score: null, sources: [] };

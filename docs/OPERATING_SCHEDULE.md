@@ -7,7 +7,7 @@ notes at the top of each file listed below.
 |---|---|---|---|---|
 | Daily AI Predictor | once a day | cron-job.org | `predictor_tickets` | Built |
 | Odds Comparison | 3 times a day | cron-job.org | snapshot table (to build) | Not built: currently on demand |
-| Confidence Score (tipster part) | tipster sites fetched once a day | cron-job.org | tipster table (to build) | Not built: currently live per decode |
+| Confidence Score (tipster part) | tipster sites fetched once a day | Vercel Cron `/api/cron/tipster-refresh` (04:00 UTC) | `tipster_predictions` | Built for Statarea + PredictZ; Forebet has no parser yet |
 
 ## Daily AI Predictor (`app/api/cron/predictor/route.ts`)
 - Runs once a day from **cron-job.org**: `GET /api/cron/predictor` with header
@@ -32,10 +32,11 @@ notes at the top of each file listed below.
 - Today: built on demand with a shared 5-minute cache. Moving to the target
   needs a snapshot table and a job route that calls `buildDay()`.
 
-## Confidence Score (`lib/services/tipsterConsensus.ts`)
-- Target: Statarea, PredictZ and Forebet are fetched once a day and stored;
-  scores are calculated from the stored data, never by fetching during a decode.
-- Today: Forebet is not built, and Statarea/PredictZ are fetched live on every
-  decode (PredictZ via ZenRows credits).
+## Confidence Score (`lib/services/tipsterConsensus.ts`, `lib/services/tipsterCache.ts`)
+- Statarea and PredictZ are fetched once a day by `/api/cron/tipster-refresh`
+  (Vercel Cron, 04:00 UTC, rolling 3-day window) and stored in
+  `tipster_predictions`. Decodes read the stored rows and never fetch the sites.
+- Forebet: `forebet.ts` is a raw fetch only. No parser until real fetched
+  content has been inspected.
 - The BetMeter Score (our own model) is separate and uses API-Football team
   form, cached for 6 hours.

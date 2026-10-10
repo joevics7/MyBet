@@ -1,3 +1,8 @@
 {
-  "crons": []
+  "crons": [
+    {
+      "path": "/api/cron/tipster-refresh",
+      "schedule": "0 4 * * *"
+    }
+  ]
 }

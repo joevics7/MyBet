@@ -44,3 +44,23 @@ export async function fetchViaZenRows(targetUrl: string, options: ZenRowsOptions
 
   return res.text();
 }
+
+export function stripHtml(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Fetch + strip in one call, for inspecting a site's real content before
+// writing a parser for it -- the right order (see predictz.ts's history:
+// a parser was written blind, against a never-seen layout, and shipped
+// returning 0 results). Returns null on any failure.
+export async function fetchAndStripViaZenRows(targetUrl: string, options: ZenRowsOptions = {}): Promise<string | null> {
+  const html = await fetchViaZenRows(targetUrl, options);
+  return html ? stripHtml(html) : null;
+}

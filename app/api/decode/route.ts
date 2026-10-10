@@ -103,9 +103,10 @@ export async function POST(req: NextRequest) {
   // entire prediction pages from scratch), risking a Vercel timeout on
   // anything but a single-selection code.
   // Every distinct date present in the slip -- a code can bundle
-  // selections across several days, and each needs its own Statarea
-  // fetch (scoping to only one date silently loses matches for the
-  // others, which happened in production before this fix).
+  // selections across several days, and each needs to be checked against
+  // the cache separately (scoping to only one date silently loses
+  // matches for the others, which happened in production before this
+  // was fixed).
   const kickoffDates = Array.from(
     new Set(result.selections.map((s) => s.kickoffAt?.slice(0, 10)).filter((d): d is string => !!d)),
   );
