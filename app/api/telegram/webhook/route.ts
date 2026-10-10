@@ -6,11 +6,13 @@ import { saveVaultEntry } from '@/lib/services/vaultSave';
 import {
   MAIN_MENU_TEXT,
   mainMenu,
+  menuActionFor,
   platformPicker,
   predictorAnalysis,
   predictorBands,
   predictorHome,
   predictorTicket,
+  replyKeyboard,
   vaultSummary,
   websiteToolView,
 } from '@/lib/telegram/menus';
@@ -20,7 +22,7 @@ export const maxDuration = 20;
 
 const WELCOME_TEXT = `Welcome to BetMeter!
 
-Tap a tool below, or use commands:
+Use the menu buttons under the message box (tap the grid icon if you can't see them), or use commands:
 /menu -- show this menu
 /decode <code> -- decode a SportyBet code (or /decode <platform> <code>)
 /save -- pick a platform, then send your code to save it
@@ -66,7 +68,7 @@ async function decodeAndReply(chatId: number, platformSlug: string, code: string
     (s) => `${s.homeTeam} v ${s.awayTeam}\n${s.market} @ ${s.odds.toFixed(2)}`,
   );
   const totalOddsLine = result.totalOdds ? `\n\nTotal odds: ${result.totalOdds}` : '';
-  await sendMessage(chatId, `${result.selections.length} selections:\n\n${lines.join('\n\n')}${totalOddsLine}`);
+  await sendMessage(chatId, `${result.selections.length} selections:\n\n${lines.join('\n\n')}${totalOddsLine}`, undefined, replyKeyboard());
 }
 
 // Website sign-in: the Vault page created a one-time token and sent the
@@ -268,7 +270,7 @@ async function saveCodeForSender(message: TelegramMessage, platformSlug: string,
   }
 
   const result = await saveVaultEntry(admin, { tgUserId: user.id, platformSlug, code });
-  await sendMessage(chatId, result.ok ? result.confirmation : result.error);
+  await sendMessage(chatId, result.ok ? result.confirmation : result.error, undefined, replyKeyboard());
 }
 
 // /save            -> platform buttons, then a prompt for the code
@@ -293,6 +295,24 @@ async function handleSaveCommand(message: TelegramMessage, args: string[]) {
   const platformSlug = args.length === 2 ? args[0] : 'sportybet';
   const code = args.length === 2 ? args[1] : args[0];
   await saveCodeForSender(message, platformSlug, code);
+}
+
+// A tap on one of the persistent menu buttons (they arrive as plain text).
+async function handleMenuButton(message: TelegramMessage, action: ReturnType<typeof menuActionFor> & string) {
+  const chatId = message.chat.id;
+  if (action === 'predictor') {
+    const v = predictorHome();
+    return void (await sendMessage(chatId, v.text, undefined, v.keyboard));
+  }
+  if (action === 'decode') return handleDecodeCommand(chatId, []);
+  if (action === 'save') return handleSaveCommand(message, []);
+  if (action === 'vault') {
+    if (!message.from) return;
+    const v = await vaultSummary(getSupabaseAdmin(), message.from.id);
+    return void (await sendMessage(chatId, v.text, undefined, v.keyboard));
+  }
+  const v = websiteToolView(action);
+  if (v) await sendMessage(chatId, v.text, undefined, v.keyboard);
 }
 
 export async function POST(req: NextRequest) {
@@ -326,15 +346,18 @@ export async function POST(req: NextRequest) {
 
   try {
     const replyTarget = text.startsWith('/') ? null : codePromptTarget(message!);
-    if (replyTarget) {
+    const menuAction = menuActionFor(text);
+    if (menuAction) {
+      await handleMenuButton(message!, menuAction);
+    } else if (replyTarget) {
       if (replyTarget.action === 'save') await saveCodeForSender(message!, replyTarget.slug, text);
       else await decodeAndReply(chatId, replyTarget.slug, text);
     } else if (text.startsWith('/start login_')) {
       await handleLoginStart(message!, text.slice('/start login_'.length).trim());
     } else if (text === '/start' || text === '/help') {
-      await sendMessage(chatId, WELCOME_TEXT, undefined, mainMenu()); // plain text -- WELCOME_TEXT uses <code>/<platform> as placeholder notation, which would conflict with an actual parse_mode
+      await sendMessage(chatId, WELCOME_TEXT, undefined, replyKeyboard()); // plain text -- WELCOME_TEXT uses <code>/<platform> as placeholder notation, which would conflict with an actual parse_mode
     } else if (/^\/menu(@\w+)?$/i.test(text)) {
-      await sendMessage(chatId, MAIN_MENU_TEXT, undefined, mainMenu());
+      await sendMessage(chatId, 'Menu ready -- tap the grid icon next to the message box to show or hide it.', undefined, replyKeyboard());
     } else if (/^\/save(@\w+)?(\s|$)/i.test(text)) {
       await handleSaveCommand(message!, text.split(/\s+/).slice(1));
     } else if (text.startsWith('/decode')) {
