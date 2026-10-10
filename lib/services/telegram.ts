@@ -2,6 +2,8 @@
 // No SDK dependency; Telegram's HTTP API is simple enough that a wrapper
 // adds more weight than value here.
 
+import { replyKeyboard } from '@/lib/telegram/keyboard';
+
 const TELEGRAM_API_BASE = 'https://api.telegram.org';
 
 function getBotToken(): string {
@@ -22,6 +24,10 @@ export async function sendMessage(
   parseMode?: 'Markdown' | 'HTML',
   replyMarkup?: Record<string, unknown>, // inline_keyboard / force_reply
 ): Promise<boolean> {
+  // Private chats (positive ids) always carry the menu keyboard unless the
+  // message brings its own buttons, so the grid icon appears for anyone the
+  // bot has ever messaged -- they never have to type /start or /menu.
+  const markup = replyMarkup ?? (Number(chatId) > 0 ? replyKeyboard() : undefined);
   const url = `${TELEGRAM_API_BASE}/bot${getBotToken()}/sendMessage`;
   const res = await fetch(url, {
     method: 'POST',
@@ -30,7 +36,7 @@ export async function sendMessage(
       chat_id: chatId,
       text,
       ...(parseMode ? { parse_mode: parseMode } : {}),
-      ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+      ...(markup ? { reply_markup: markup } : {}),
       disable_web_page_preview: true,
     }),
   });
