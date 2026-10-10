@@ -4,6 +4,8 @@ import { decodeSportyBetCode } from '@/lib/services/sportybet';
 import { decodeBet9jaCode } from '@/lib/services/bet9ja';
 import type { DecodeResult } from '@/lib/services/types';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
+import { getPlatform } from '@/lib/services/platforms';
+import { saveVaultEntry } from '@/lib/services/vaultSave';
 
 export const runtime = 'nodejs';
 export const maxDuration = 20;
@@ -26,7 +28,10 @@ Paste any SportyBet booking code and I'll decode it for you. Or use:
 /decode <code> -- decodes a SportyBet code
 /decode <platform> <code> -- e.g. /decode bet9ja 5T6TLPN
 
-To use the Vault, open the Vault page on the website and tap "Connect with Telegram" -- I'll message you here whenever a saved code settles.
+Save codes to your Vault right here:
+/save <code> -- saves a SportyBet code
+/save <platform> <code> -- e.g. /save footballcom ABC123
+I'll message you here whenever a saved code settles. (You can also manage your Vault on the website.)
 
 More tools (confidence scores, splitting) are on the way here -- for the full set, visit the website.`;
 
@@ -135,6 +140,62 @@ async function handleLoginStart(message: NonNullable<TelegramUpdate['message']>,
   );
 }
 
+// /save <code> or /save <platform> <code>. Telegram itself is the identity,
+// so the first /save from someone who never opened the website just creates
+// their account row. Private chats only: alerts go to this chat, so it must
+// be the user's own DM.
+async function handleSaveCommand(message: NonNullable<TelegramUpdate['message']>, args: string[]) {
+  const chatId = message.chat.id;
+
+  if (message.chat.type !== 'private' || !message.from) {
+    await sendMessage(chatId, 'Message me directly to save codes to your Vault.');
+    return;
+  }
+  if (args.length === 0 || args.length > 2) {
+    await sendMessage(chatId, 'Send a booking code like this: /save P79BMH or /save footballcom ABC123');
+    return;
+  }
+
+  const platformSlug = args.length === 2 ? args[0] : 'sportybet';
+  const code = args.length === 2 ? args[1] : args[0];
+  if (!getPlatform(platformSlug)) {
+    await sendMessage(chatId, `I don't support "${platformSlug}" yet. Try /save <code> for SportyBet.`);
+    return;
+  }
+
+  let admin;
+  try {
+    admin = getSupabaseAdmin();
+  } catch {
+    await sendMessage(chatId, "The Vault isn't available right now -- try again later.");
+    return;
+  }
+
+  const { data: user, error: userError } = await admin
+    .from('telegram_users')
+    .upsert(
+      {
+        telegram_id: message.from.id,
+        chat_id: chatId,
+        username: message.from.username ?? null,
+        first_name: message.from.first_name ?? null,
+        last_seen_at: new Date().toISOString(),
+      },
+      { onConflict: 'telegram_id' },
+    )
+    .select('id')
+    .single();
+
+  if (userError || !user) {
+    console.error('[telegram webhook] user upsert failed:', userError);
+    await sendMessage(chatId, 'Something went wrong saving that -- try again.');
+    return;
+  }
+
+  const result = await saveVaultEntry(admin, { tgUserId: user.id, platformSlug, code });
+  await sendMessage(chatId, result.ok ? result.confirmation : result.error);
+}
+
 export async function POST(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -160,6 +221,8 @@ export async function POST(req: NextRequest) {
       await handleLoginStart(message!, text.slice('/start login_'.length).trim());
     } else if (text === '/start' || text === '/help') {
       await sendMessage(chatId, WELCOME_TEXT); // plain text -- WELCOME_TEXT uses <code>/<platform> as placeholder notation, which would conflict with an actual parse_mode
+    } else if (/^\/save(@\w+)?(\s|$)/i.test(text)) {
+      await handleSaveCommand(message!, text.split(/\s+/).slice(1));
     } else if (text.startsWith('/decode')) {
       const args = text.split(/\s+/).slice(1);
       await handleDecodeCommand(chatId, args);
