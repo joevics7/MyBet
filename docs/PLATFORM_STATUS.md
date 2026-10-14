@@ -14,6 +14,7 @@ browser capture and not yet run live.
 | Bangbet | yes | yes (untested) | no | yes | no | Decode tested; rebuilt 2026-10-14 from captures, needs a retest |
 | Betwinner | captured | captured | no | yes | no | Not yet run live |
 | Afropari | guessed | guessed | no | yes | no | Not yet run live; no decode/create capture exists |
+| 22bet | guessed | no | no | yes | no | Not yet run live; no decode capture, create captured for live games only |
 | MSport | no | no | no | no | no | Tested 2026-10-10, decode does not work |
 | Stake | no | no | no | no | no | Tested 2026-10-10, does not work |
 | Bet9ja | paste-import only | no | no | yes (via paste-import) | no | Server request blocked by Akamai; manual route added 2026-10-14, untested |
@@ -69,6 +70,18 @@ Bet9ja (hide it from the pickers via `PICKER_EXCLUDED` in `lib/telegram/menus.ts
   given match for the Converter.
 - Currency id was not visible in the capture, so it is omitted from `UpdateCoupon`.
 - Needs: the real decode request, the real create request, and a full line feed.
+
+### 22bet (`lib/services/xbetFamily.ts`)
+- Same engine as Betwinner and Afropari (partner 151). Same `x-hd` fingerprint token, so the
+  bot-protection note above applies.
+- The capture has `UpdateCoupon` and a create call, but no decode request. Decode is assumed to
+  match Betwinner's (`GetCoupon`). Unconfirmed.
+- Create is known but not built: `POST https://22bet.ng/LiveUtil/SaveCoupon` (a different path from
+  Betwinner's), body `{ Live, Summ, Lng, Vid, CfView, notWait, partner, Events: [...] }`, code returned
+  in `Value`. It was captured with LIVE games only (`Kind: 1`, `Live: true`); the pre-match body is
+  not known. Note: this suggests Kind 1 = live and Kind 3 = pre-match, which also means the Betwinner
+  create (which sends `Kind: 3`) would be wrong for live games.
+- Needs: the real decode request, a pre-match create request, a full line feed.
 
 ### SportyBet family (SportyBet, Football.com, MSport)
 - SportyBet is the only platform where the Vault can auto-check results.

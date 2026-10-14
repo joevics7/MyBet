@@ -8,6 +8,7 @@ export const PLATFORM_OPTIONS = [
   { slug: 'bangbet', label: 'Bangbet' },
   { slug: 'betwinner', label: 'Betwinner' },
   { slug: 'afropari', label: 'Afropari' },
+  { slug: '22bet', label: '22bet' },
   { slug: 'stake', label: 'Stake (link or bet ID)' },
   { slug: 'bet9ja', label: 'Bet9ja' },
 ] as const;

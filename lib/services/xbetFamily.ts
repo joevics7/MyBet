@@ -41,8 +41,8 @@ export interface XbetConfig {
   origin: string; // e.g. https://betwinner.ng
   referer: string;
   partner: number; // the site's partner id, sent by the web app on every request
-  group: number; // "Group" sent with UpdateCoupon
-  country: number;
+  group?: number; // "Group" sent with UpdateCoupon (omitted when the capture didn't show one)
+  country?: number;
   currency?: number; // omitted when the capture didn't show one
 }
 
@@ -67,6 +67,19 @@ export const AFROPARI_CONFIG: XbetConfig = {
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36';
+// 22bet: same engine, partner 151. Its capture had UpdateCoupon and a create call (note the
+// DIFFERENT path, POST /LiveUtil/SaveCoupon, with extra fields: Live, Summ 1, Opp*Images,
+// PlayersDuel objects) but only for LIVE games (Kind 1, "Live": true), and no decode request.
+// So only decode is registered, by analogy with Betwinner -- UNCONFIRMED. Kind 1 looks like
+// "live" and Kind 3 like "pre-match" (Betwinner's capture); a pre-match create capture is needed
+// before create can be added for 22bet.
+export const TWENTYTWOBET_CONFIG: XbetConfig = {
+  name: '22bet',
+  origin: 'https://22bet.ng',
+  referer: 'https://22bet.ng/live/football',
+  partner: 151,
+};
+
 const headersFor = (cfg: XbetConfig) => ({
   Accept: 'application/json, text/plain, */*',
   'Content-Type': 'application/json',
@@ -230,8 +243,8 @@ export async function encodeXbetSlip(cfg: XbetConfig, selections: EncodeSelectio
     Lng: 'en',
     CfView: 0,
     CalcSystemsMin: false,
-    Group: cfg.group,
-    Country: cfg.country,
+    ...(cfg.group !== undefined ? { Group: cfg.group } : {}),
+    ...(cfg.country !== undefined ? { Country: cfg.country } : {}),
     ...(cfg.currency !== undefined ? { Currency: cfg.currency } : {}),
     SaleBetId: 0,
     IsPowerBet: false,
@@ -268,5 +281,6 @@ export async function encodeXbetSlip(cfg: XbetConfig, selections: EncodeSelectio
 
 export const decodeBetwinnerCode = (code: string) => decodeXbetCode(BETWINNER_CONFIG, code);
 export const encodeBetwinnerSlip = (sels: EncodeSelectionInput[]) => encodeXbetSlip(BETWINNER_CONFIG, sels);
+export const decode22betCode = (code: string) => decodeXbetCode(TWENTYTWOBET_CONFIG, code);
 export const decodeAfropariCode = (code: string) => decodeXbetCode(AFROPARI_CONFIG, code);
 export const encodeAfropariSlip = (sels: EncodeSelectionInput[]) => encodeXbetSlip(AFROPARI_CONFIG, sels);

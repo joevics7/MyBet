@@ -21,6 +21,7 @@ import {
   encodeBetwinnerSlip,
   decodeAfropariCode,
   encodeAfropariSlip,
+  decode22betCode,
 } from './xbetFamily';
 import { decodeStakeBet } from './stake';
 import { decodeBetwayCode, encodeBetwaySlip } from './betway';
@@ -124,6 +125,9 @@ export const PLATFORMS: PlatformAdapter[] = [
     canSettle: false,
     verified: false,
   },
+  // 22bet NG: same engine again (partner 151). Decode only, assumed from Betwinner's -- UNCONFIRMED.
+  // Its capture has a create call, but for live games only and on a different path, so no create yet.
+  { slug: '22bet', label: '22bet', decode: decode22betCode, canSettle: false, verified: false },
   // Decode only. Input is a share link or bet ID ("sport:12345678"), not a
   // booking code. No create path exists. TESTED 2026-10-10: does NOT work.
   { slug: 'stake', label: 'Stake', decode: decodeStakeBet, canSettle: false, verified: false },
