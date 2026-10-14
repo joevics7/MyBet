@@ -67,8 +67,12 @@ export const PLATFORMS: PlatformAdapter[] = [
       baseUrl: 'https://www.football.com/api/ng/orders/share',
       origin: 'https://www.football.com',
       referer: 'https://www.football.com/ng/',
+      // Football.com's own site sends wap/wap and no cache-busting `_t` (2026-10-14 capture).
+      client: 'wap',
+      cacheBust: false,
     },
-    { canSettle: true, verified: false, deepLink: 'https://www.football.com/ng/m?shareCode={code}' },
+    // Decode shape differs from SportyBet (no isAvailable, no ticket) -- handled in decodeShareCode.
+    { canSettle: true, verified: false, deepLink: 'https://www.football.com/ng/?shareCode={code}' },
   ),
   // Same Sportradar-style IDs; path differs. Response shape assumed to match
   // SportyBet's. TESTED 2026-10-10: decoding does NOT work. Hidden from the

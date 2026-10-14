@@ -9,7 +9,7 @@ browser capture and not yet run live.
 | Platform | Decode | Create code | Result check (Vault) | Converter source | Converter target | State |
 |---|---|---|---|---|---|---|
 | SportyBet | yes | yes | yes | yes | yes | Tested, works |
-| Football.com | yes | yes | yes | yes | yes | Same stack as SportyBet, not separately verified |
+| Football.com | yes (fixed 2026-10-14) | yes | yes | yes | yes | Decode fixed against a real capture, not yet run live |
 | Betway | yes | yes | no | yes | yes | Tested 2026-10-10, works |
 | Bangbet | yes | yes (untested) | no | yes | no | Decode tested; rebuilt 2026-10-14 from captures, needs a retest |
 | Betwinner | captured | captured | no | yes | no | Not yet run live |
@@ -99,7 +99,13 @@ Bet9ja (hide it from the pickers via `PICKER_EXCLUDED` in `lib/telegram/menus.ts
 
 ### SportyBet family (SportyBet, Football.com, MSport)
 - SportyBet is the only platform where the Vault can auto-check results.
-- Football.com is a white-label with the same API; it has not been verified on its own.
+- Football.com is a white-label with the same paths and ids but a different decode response. Fixed
+  2026-10-14 from a capture: the response has no `isAvailable` and no `ticket` (the decoder used to reject
+  it as invalid); picks are the markets left in `data.outcomes`, total odds are multiplied from the picks.
+  Requests now send `clientid`/`platform` = `wap` (its own site's values) and no `_t`. Checked against the
+  captured response only, not live. Not sent: cookies, `sporty-referer`, empty `operid`; if it still fails
+  live, look for `invalid` on a real code and try adding those. Share link is
+  `https://www.football.com/ng/?shareCode=<code>`.
 - MSport decode does not work (tested 2026-10-10); it is hidden from the Telegram pickers and
   left out of Converter targets and Predictor codes.
 
