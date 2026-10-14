@@ -13,6 +13,7 @@ browser capture and not yet run live.
 | Betway | yes | yes | no | yes | yes | Tested 2026-10-10, works |
 | Bangbet | yes | yes (untested) | no | yes | no | Decode tested; rebuilt 2026-10-14 from captures, needs a retest |
 | Betwinner | captured | captured | no | yes | no | Not yet run live |
+| Helabet | captured | captured | no | yes | no | Same engine as Betwinner; real decode + create capture (live basketball slip), not run live |
 | Afropari | guessed | guessed | no | yes | no | Not yet run live; no decode/create capture exists |
 | 22bet | guessed | no | no | yes | no | Not yet run live; no decode capture, create captured for live games only |
 | Betpawa | not mapped | captured | no | yes (once decode works) | no | Request built; response is protobuf with unknown layout. Create code from a Betpawa decode only |
@@ -61,6 +62,14 @@ Bet9ja (hide it from the pickers via `PICKER_EXCLUDED` in `lib/telegram/menus.ts
   `Vid` 0 for one pick / 1 for several.
 - To make it a Converter target we need a request that lists matches with odds (a line feed).
   Not in the research yet. The same gap blocks odds comparison and Predictor codes.
+
+### Helabet (`lib/services/helabet.ts`)
+- Same engine as Betwinner (partner 237, group 768, country 132, currency 115). Decode, create and
+  price refresh all come from a real capture. Reuses `xbetFamily.ts` without changing it.
+- The captured slip was two live basketball games, so pre-match create (`Kind`) is unconfirmed, and
+  basketball picks are shown unscored (only football 1X2, totals and GG/NG are scored).
+- Same `x-hd` fingerprint token as Betwinner: not sent. Look for `[helabet ... non-OK]` in the logs.
+- Not a Converter target (no line feed in the research). Create works only for Helabet-decoded picks.
 
 ### Afropari (`lib/services/xbetFamily.ts`)
 - Same engine as Betwinner (partner 300, group 806, country 132 from the captured feed URL).
