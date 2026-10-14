@@ -15,7 +15,7 @@ import {
   type ShareApiConfig,
 } from './sportybet';
 import { decodeBet9jaCode } from './bet9ja';
-import { decodeBangbetCode } from './bangbet';
+import { decodeBangbetCode, encodeBangbetSlip } from './bangbet';
 import { decodeStakeBet } from './stake';
 import { decodeBetwayCode, encodeBetwaySlip } from './betway';
 
@@ -75,12 +75,15 @@ export const PLATFORMS: PlatformAdapter[] = [
     },
     { canSettle: false, verified: false },
   ),
-  // TESTED 2026-10-10: decoding works. Confidence scores don't line up yet --
-  // the leg's market/outcome text isn't being parsed into a scoreable market.
+  // Decoding works (tested 2026-10-10). 2026-10-14: switched to the confirmed bookingV2 endpoint,
+  // kickoff time is now filled from the odds endpoint (it was missing, which blanked every
+  // score), and market text is built from Sportradar ids. Create-code added from the captured
+  // /bet/share request -- NOT yet tested live, so it's kept out of the Converter's targets.
   {
     slug: 'bangbet',
     label: 'Bangbet',
     decode: decodeBangbetCode,
+    encode: encodeBangbetSlip,
     canSettle: false,
     verified: true,
     deepLink: 'https://www.bangbet.com/static/share/book.html?{code}',
