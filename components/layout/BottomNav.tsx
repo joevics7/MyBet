@@ -17,9 +17,9 @@ export function BottomNav() {
   return (
     <nav
       aria-label="Primary"
-      className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-[hsl(var(--paper))]/95 backdrop-blur border-t border-border safe-area-pb"
+      className="md:hidden fixed bottom-0 left-0 right-0 w-full max-w-full overflow-hidden z-30 bg-[hsl(var(--paper))]/95 backdrop-blur border-t border-border safe-area-pb"
     >
-      <div className="grid grid-cols-4">
+      <div className="grid grid-cols-4 w-full">
         {TABS.map((tab) => {
           const active = tab.match(pathname);
           return (
@@ -27,7 +27,7 @@ export function BottomNav() {
               key={tab.href}
               href={tab.href}
               aria-current={active ? 'page' : undefined}
-              className="flex flex-col items-center justify-center gap-1 py-2.5 min-h-[56px]"
+              className="flex min-w-0 flex-col items-center justify-center gap-1 py-2.5 min-h-[56px]"
             >
               <tab.icon
                 className={`h-5 w-5 ${active ? 'text-[hsl(var(--verified))]' : 'text-muted-foreground'}`}

@@ -63,7 +63,8 @@ export const PLATFORMS: PlatformAdapter[] = [
     { canSettle: true, verified: false, deepLink: 'https://www.football.com/ng/m?shareCode={code}' },
   ),
   // Same Sportradar-style IDs; path differs. Response shape assumed to match
-  // SportyBet's -- unconfirmed, so settlement checking stays off until verified.
+  // SportyBet's. TESTED 2026-10-10: decoding does NOT work. Hidden from the
+  // Telegram pickers until it's fixed.
   shareFamily(
     'msport',
     'MSport',
@@ -74,28 +75,30 @@ export const PLATFORMS: PlatformAdapter[] = [
     },
     { canSettle: false, verified: false },
   ),
+  // TESTED 2026-10-10: decoding works. Confidence scores don't line up yet --
+  // the leg's market/outcome text isn't being parsed into a scoreable market.
   {
     slug: 'bangbet',
     label: 'Bangbet',
     decode: decodeBangbetCode,
     canSettle: false,
-    verified: false,
+    verified: true,
     deepLink: 'https://www.bangbet.com/static/share/book.html?{code}',
   },
-  // Anonymous JSON API documented from live tests in a public repo (not yet
-  // run from our server). Decode + create. Result checking stays off.
+  // TESTED 2026-10-10: decoding works. Decode + create. Result checking stays off.
   {
     slug: 'betway',
     label: 'Betway',
     decode: decodeBetwayCode,
     encode: encodeBetwaySlip,
     canSettle: false,
-    verified: false,
+    verified: true,
   },
   // Decode only. Input is a share link or bet ID ("sport:12345678"), not a
-  // booking code. No create path exists. Lookup query unverified.
+  // booking code. No create path exists. TESTED 2026-10-10: does NOT work.
   { slug: 'stake', label: 'Stake', decode: decodeStakeBet, canSettle: false, verified: false },
   // Decode-only; known to fail from our server (geo/bot protection). Parked.
+  // TESTED 2026-10-10: does NOT work.
   { slug: 'bet9ja', label: 'Bet9ja', decode: decodeBet9jaCode, canSettle: false, verified: false },
 ];
 
