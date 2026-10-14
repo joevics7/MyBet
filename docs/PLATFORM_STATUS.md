@@ -181,3 +181,56 @@ Bet9ja (hide it from the pickers via `PICKER_EXCLUDED` in `lib/telegram/menus.ts
    built since. Run `npm run build` before relying on a deploy.
 8. **Captures contain personal data.** Raw browser captures include session cookies and
    affiliate tags. Do not commit them or paste them in public places.
+
+## Open issues from the 2026-10-14 platform work (Betpawa, Football.com, Helabet, Melbet, MSport)
+
+Nothing below has been run against the real sites. The sandbox these were built in cannot reach the
+bookmakers, so every adapter was checked only by replaying the captured responses through the code
+and by `tsc`. `next build` could not be run there either (it fails fetching Google Fonts), so run
+`npm run build` before relying on a deploy.
+
+**All five**
+- A capture is one person's browser session. Sites may treat server requests differently: IP
+  reputation, Cloudflare/CloudFront bot rules, and headers or cookies we deliberately do not send
+  (`x-hd`, `x-device-fingerprint`, cookies). If decode returns "invalid" on a real code, check the
+  logs for `[<platform> ... non-OK]` first.
+- Re-run `supabase/seeds/platforms.sql` for the new rows (betpawa, helabet, melbet). The Supabase
+  project connected to Claude does not contain BetMeter's tables, so they were not checked there.
+
+**Betpawa** (not working: decode)
+- Decode cannot work yet: responses are protobuf with a private schema, and the capture has no decode
+  response body. `mapBooking()` is empty on purpose rather than guessing fields. Needs one real response.
+- Create code (JSON, from the capture) is untested, and it is unknown whether multiples use a `type`
+  other than `SINGLE`.
+- Not a Converter target: the match feed is protobuf and unmapped. Hidden from Telegram pickers.
+
+**Football.com**
+- Decode fixed against a capture only. Cookies, `sporty-referer` and `operid` are not sent; CloudFront
+  may reject server traffic.
+- Vault checking is switched on but untested: the capture's slip had not started, so it is unknown
+  whether per-pick results (`isWinning`) are reported. If not, the Vault cannot settle these slips.
+- The odds feed (`pcUpcomingEvents`, used by Odds comparison) is a guessed copy of SportyBet's path
+  and sends none of the `wap` headers. It may fail silently. Not in the capture.
+- Unused: its own converter endpoint (`/orders/converter/code`) and live-odds endpoint
+  (`/factsCenter/Outcomes`).
+
+**Helabet**
+- Same `x-hd` risk as Betwinner. The capture was two live basketball games, so pre-match create
+  (`Kind`) is unconfirmed, and basketball picks are unscored.
+- Football market ids (totals, GG/NG) are 1xBet-family assumptions, not confirmed on this site.
+- Not a Converter target (no match feed).
+
+**Melbet**
+- The capture has the decode request but no decode response, so decode assumes Betwinner's shape.
+- Captured on `melbet.com`; Nigerian users may be on `melbet.ng`.
+- One pick in the capture was `Block: true` (a live game); create refuses blocked picks by design.
+- The site sends `IsExpressBoost: true` on price refresh; we do not. Effect unknown.
+- Same `x-hd` risk; live-only capture, so pre-match create is unconfirmed; not a Converter target.
+
+**MSport**
+- The capture was a logged-in session. We send no cookies, so anonymous access is unproven; if MSport
+  requires login for share lookups it will still fail.
+- Vault checking off (slip had not started). Not in Predictor codes.
+- Added back to the Converter targets and Telegram pickers without a live test. If it misbehaves,
+  remove it from `CONVERT_TARGETS` (`lib/platformList.ts`) and add `msport` back to `PICKER_EXCLUDED`
+  (`lib/telegram/menus.ts`).
