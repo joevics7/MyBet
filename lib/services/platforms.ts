@@ -16,7 +16,12 @@ import {
 } from './sportybet';
 import { decodeBet9jaCode } from './bet9ja';
 import { decodeBangbetCode, encodeBangbetSlip } from './bangbet';
-import { decodeBetwinnerCode, encodeBetwinnerSlip } from './betwinner';
+import {
+  decodeBetwinnerCode,
+  encodeBetwinnerSlip,
+  decodeAfropariCode,
+  encodeAfropariSlip,
+} from './xbetFamily';
 import { decodeStakeBet } from './stake';
 import { decodeBetwayCode, encodeBetwaySlip } from './betway';
 
@@ -106,6 +111,16 @@ export const PLATFORMS: PlatformAdapter[] = [
     label: 'Betwinner',
     decode: decodeBetwinnerCode,
     encode: encodeBetwinnerSlip,
+    canSettle: false,
+    verified: false,
+  },
+  // Afropari: same engine as Betwinner. Its capture had NO decode/create request, so both are
+  // assumed to match Betwinner's -- UNCONFIRMED, added so it can be tested. Same limits as Betwinner.
+  {
+    slug: 'afropari',
+    label: 'Afropari',
+    decode: decodeAfropariCode,
+    encode: encodeAfropariSlip,
     canSettle: false,
     verified: false,
   },

@@ -1,4 +1,4 @@
-// Betwinner Nigeria adapter (decode + create code).
+// 1xBet-family adapter (decode + create code), configured per site: Betwinner NG, Afropari.
 //
 // Contract from real browser captures of betwinner.ng (2026-10-14), all plain JSON POSTs:
 //
@@ -21,51 +21,84 @@
 //
 // NOT SENT, on purpose: the captured requests also carried browser cookies and an opaque `x-hd`
 // header. We send neither. If Betwinner/Cloudflare rejects server requests without them, decode
-// will log "[betwinner ...] non-OK" -- that is the thing to check first (see notes in the PR).
+// will log "[betwinner ...] non-OK" (or "[afropari ...]") -- that is the thing to check first (see notes in the PR).
 //
-// Create-code only works for picks that came from a Betwinner decode (it needs Betwinner's own
+// AFROPARI uses the very same engine (same /service-api paths, same Event shape, partner 300,
+// Group 806). Its capture only contained UpdateCoupon -- NO decode (GetCoupon) or create
+// (SaveCoupon) request -- so those two calls are assumed to match Betwinner's. UNCONFIRMED.
+// Both sites also send an `x-hd` token minted by a browser fingerprinting challenge
+// (POST /hd-api/external/verify). We do not try to produce that token.
+//
+// Create-code only works for picks that came from a decode on the same site (it needs Betwinner's own
 // GameId). Creating a code from another platform's slip needs a Betwinner line/feed lookup, which
 // the research doesn't cover yet, so Betwinner is NOT a Converter target.
 
 import type { DecodeResult, NormalizedSelection } from './types';
 import type { EncodeResult, EncodeSelectionInput } from './sportybet';
 
-const BASE = 'https://betwinner.ng/service-api';
-const PARTNER = 152; // the site's partner id, sent by the web app on every request
+export interface XbetConfig {
+  name: string; // for log lines
+  origin: string; // e.g. https://betwinner.ng
+  referer: string;
+  partner: number; // the site's partner id, sent by the web app on every request
+  group: number; // "Group" sent with UpdateCoupon
+  country: number;
+  currency?: number; // omitted when the capture didn't show one
+}
+
+export const BETWINNER_CONFIG: XbetConfig = {
+  name: 'betwinner',
+  origin: 'https://betwinner.ng',
+  referer: 'https://betwinner.ng/en/line',
+  partner: 152,
+  group: 526,
+  country: 132,
+  currency: 115,
+};
+
+export const AFROPARI_CONFIG: XbetConfig = {
+  name: 'afropari',
+  origin: 'https://afropari.com',
+  referer: 'https://afropari.com/',
+  partner: 300,
+  group: 806,
+  country: 132, // from the capture's feed URL (fcountry=132)
+};
+
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36';
-const HEADERS = {
+const headersFor = (cfg: XbetConfig) => ({
   Accept: 'application/json, text/plain, */*',
   'Content-Type': 'application/json',
-  Origin: 'https://betwinner.ng',
-  Referer: 'https://betwinner.ng/en/line',
+  Origin: cfg.origin,
+  Referer: cfg.referer,
   'User-Agent': UA,
   'x-app-n': '__BETTING_APP__',
   'x-svc-source': '__BETTING_APP__',
   'x-requested-with': 'XMLHttpRequest',
   'is-srv': 'false',
-};
+});
 
 const EMPTY: DecodeResult = { status: 'invalid', shareCode: null, selections: [], totalOdds: null, raw: null };
 
 type Json = Record<string, any>;
 
-async function post(path: string, body: unknown): Promise<Json | null> {
+async function post(cfg: XbetConfig, path: string, body: unknown): Promise<Json | null> {
   try {
-    const res = await fetch(`${BASE}${path}`, {
+    const res = await fetch(`${cfg.origin}/service-api${path}`, {
       method: 'POST',
-      headers: HEADERS,
+      headers: headersFor(cfg),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(8000),
     });
     const text = await res.text();
     if (!res.ok) {
-      console.error(`[betwinner ${path}] non-OK:`, res.status, text.slice(0, 200));
+      console.error(`[${cfg.name} ${path}] non-OK:`, res.status, text.slice(0, 200));
       return null;
     }
     return JSON.parse(text) as Json;
   } catch (err) {
-    console.error(`[betwinner ${path}] failed:`, err);
+    console.error(`[${cfg.name} ${path}] failed:`, err);
     return null;
   }
 }
@@ -104,9 +137,9 @@ function startToIso(e: Json): string | null {
 
 // ---- decode ------------------------------------------------------------------------------------
 
-export async function decodeBetwinnerCode(code: string): Promise<DecodeResult> {
+export async function decodeXbetCode(cfg: XbetConfig, code: string): Promise<DecodeResult> {
   const clean = code.trim();
-  const json = await post('/LiveBet/Open/GetCoupon', { Guid: clean, Lng: 'en', partner: PARTNER });
+  const json = await post(cfg, '/LiveBet/Open/GetCoupon', { Guid: clean, Lng: 'en', partner: cfg.partner });
 
   if (!json) return EMPTY;
   if (json.Success !== true || !json.Value) {
@@ -172,17 +205,17 @@ const toEvent = (s: EncodeSelectionInput, coef: number) => ({
   PlayersDuel: [],
 });
 
-export async function encodeBetwinnerSlip(selections: EncodeSelectionInput[]): Promise<EncodeResult> {
+export async function encodeXbetSlip(cfg: XbetConfig, selections: EncodeSelectionInput[]): Promise<EncodeResult> {
   if (selections.length === 0) return { status: 'failed', shareCode: null };
 
   // Needs Betwinner's own numeric GameId and a price to send.
   if (selections.some((s) => !/^\d+$/.test(s.externalEventId) || !/^\d+$/.test(s.outcomeId) || !(Number(s.odds) > 0))) {
-    console.error('[betwinner encode] picks must come from a Betwinner decode (numeric GameId, Type, odds)');
+    console.error(`[${cfg.name} encode] picks must come from a decode on this site (numeric GameId, Type, odds)`);
     return { status: 'failed', shareCode: null };
   }
   const games = selections.map((s) => s.externalEventId);
   if (new Set(games).size !== games.length) {
-    console.error('[betwinner encode] two picks from the same game');
+    console.error(`[${cfg.name} encode] two picks from the same game`);
     return { status: 'failed', shareCode: null };
   }
 
@@ -190,23 +223,23 @@ export async function encodeBetwinnerSlip(selections: EncodeSelectionInput[]): P
 
   // Ask Betwinner for the current prices first, so a price that moved since the original decode
   // doesn't make the save fail. If this call fails we carry on with the prices we have.
-  const fresh = await post('/LiveBet-update/Open/UpdateCoupon', {
+  const fresh = await post(cfg, '/LiveBet-update/Open/UpdateCoupon', {
     Events: events,
     Vid: 0,
-    partner: PARTNER,
+    partner: cfg.partner,
     Lng: 'en',
     CfView: 0,
     CalcSystemsMin: false,
-    Group: 526,
-    Country: 132,
-    Currency: 115,
+    Group: cfg.group,
+    Country: cfg.country,
+    ...(cfg.currency !== undefined ? { Currency: cfg.currency } : {}),
     SaleBetId: 0,
     IsPowerBet: false,
     WithLobby: false,
   });
   const live: Json[] = fresh?.Success === true && Array.isArray(fresh.Value?.Events) ? fresh.Value.Events : [];
   if (live.some((l) => l.Block === true)) {
-    console.error('[betwinner encode] a pick is blocked on Betwinner');
+    console.error(`[${cfg.name} encode] a pick is blocked on ${cfg.name}`);
     return { status: 'failed', shareCode: null };
   }
   events = events.map((ev) => {
@@ -215,18 +248,25 @@ export async function encodeBetwinnerSlip(selections: EncodeSelectionInput[]): P
     return Number.isFinite(coef) && coef > 0 ? { ...ev, Coef: coef } : ev;
   });
 
-  const json = await post('/LiveBet/Open/SaveCoupon', {
+  const json = await post(cfg, '/LiveBet/Open/SaveCoupon', {
     notWait: true,
     CheckCf: 1,
-    partner: PARTNER,
+    partner: cfg.partner,
     AntiExpressCoef: 1,
     Summ: 1000,
     Events: events,
     Vid: events.length > 1 ? 1 : 0,
   });
   if (!json || json.Success !== true || typeof json.Value !== 'string' || !json.Value) {
-    console.error('[betwinner encode] failed:', JSON.stringify(json)?.slice(0, 300));
+    console.error(`[${cfg.name} encode] failed:`, JSON.stringify(json)?.slice(0, 300));
     return { status: 'failed', shareCode: null };
   }
   return { status: 'ok', shareCode: json.Value };
 }
+
+// ---- per-site wrappers -----------------------------------------------------------------------------
+
+export const decodeBetwinnerCode = (code: string) => decodeXbetCode(BETWINNER_CONFIG, code);
+export const encodeBetwinnerSlip = (sels: EncodeSelectionInput[]) => encodeXbetSlip(BETWINNER_CONFIG, sels);
+export const decodeAfropariCode = (code: string) => decodeXbetCode(AFROPARI_CONFIG, code);
+export const encodeAfropariSlip = (sels: EncodeSelectionInput[]) => encodeXbetSlip(AFROPARI_CONFIG, sels);
