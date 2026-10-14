@@ -6,7 +6,7 @@ notes at the top of each file listed below.
 | Tool | How often | Triggered by | Stored where | Status |
 |---|---|---|---|---|
 | Daily AI Predictor | once a day | cron-job.org | `predictor_tickets` | Built |
-| Odds Comparison | 3 times a day | cron-job.org | snapshot table (to build) | Not built: currently on demand |
+| Odds Comparison | 3 times a day | cron-job.org (3 jobs, one URL: `/api/cron/odds`) | `odds_snapshots` | Built |
 | Confidence Score (tipster part) | tipster sites fetched once a day | Vercel Cron `/api/cron/tipster-refresh` (04:00 UTC) | `tipster_predictions` | Built for Statarea + PredictZ; Forebet has no parser yet |
 
 ## Daily AI Predictor (`app/api/cron/predictor/route.ts`)
@@ -27,10 +27,21 @@ notes at the top of each file listed below.
   and stored on the ticket in `booking_codes`.
 - Vercel Cron is not used (`vercel.json` has no crons), so it cannot double-run.
 
-## Odds Comparison (`app/api/odds/day/route.ts`, `lib/odds/day.ts`)
-- Target: refreshed 3 times a day by a scheduled job, stored, read by visitors.
-- Today: built on demand with a shared 5-minute cache. Moving to the target
-  needs a snapshot table and a job route that calls `buildDay()`.
+## Odds Comparison (`app/api/cron/odds/route.ts`, `lib/odds/snapshot.ts`, `lib/odds/day.ts`)
+- **One URL, three cron-job.org jobs** at the three times of day you choose:
+  `GET /api/cron/odds` with header `Authorization: Bearer <CRON_SECRET>`.
+  Each call re-fetches everything and replaces the stored snapshot.
+- Fetched per run: SportyBet, Football.com and Betway NG directly for the next
+  6 days; OddsPapi as fallback for the first 2 days (quota: roughly 7 requests
+  per day covered, so about 14 per run, 42 per day).
+- Stored in `odds_snapshots`, one row per UTC kickoff date. Visitors only read
+  the stored rows (`/api/odds/day`); opening the page never fetches upstream.
+- The cache lasts until the next run: the snapshot's build time is its
+  version, and a new run changes it, so the old cached data is never used again.
+- A run that finds no matches at all is discarded, keeping the last good snapshot.
+- Like the Predictor, the route replies 202 at once and finishes in the
+  background (cron-job.org drops requests after ~30s). Add `?wait=1` for a
+  foreground run with the full report.
 
 ## Confidence Score (`lib/services/tipsterConsensus.ts`, `lib/services/tipsterCache.ts`)
 - Statarea and PredictZ are fetched once a day by `/api/cron/tipster-refresh`

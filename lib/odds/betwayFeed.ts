@@ -10,7 +10,7 @@ import { num, sleep, type FeedMatch } from './types';
 export const FEEDS = 'https://www.betway.com.ng/appsynapse/feeds-roa2';
 const CONFIG = 'https://www.betway.com.ng/appsynapse/config';
 const TAKE = 20;
-const MAX_PAGES = 24;
+const MAX_PAGES = 50; // events are time-ordered; stops early once past the window
 const CONCURRENCY = 4;
 type Json = Record<string, any>;
 

@@ -34,7 +34,7 @@ export const FOOTBALLCOM: FamilyConfig = {
 };
 
 const PAGE_SIZE = 100;
-const MAX_PAGES = 15;
+const MAX_PAGES = 20; // ~1,600 upcoming matches over a 6-day window
 const CONCURRENCY = 3;
 type Json = Record<string, any>;
 

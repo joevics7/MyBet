@@ -122,7 +122,17 @@ function sortPlatforms(p: PlatformOdds[]): PlatformOdds[] {
   return p.sort((a, b) => rank(a.slug) - rank(b.slug) || a.label.localeCompare(b.label));
 }
 
-export async function buildDay(fromMs: number, toMs: number): Promise<DayOdds> {
+const DAY_MS = 24 * 3600 * 1000;
+// OddsPapi costs quota per day and its fixtures call takes a window under 48h,
+// so it covers only the first days; later days come from the direct feeds alone.
+const AGGREGATOR_DAYS = 2;
+
+export interface BuildOptions {
+  deadlineMs?: number; // stop starting new aggregator work after this instant
+}
+
+export async function buildDay(fromMs: number, toMs: number, opts: BuildOptions = {}): Promise<DayOdds> {
+  const deadlineMs = opts.deadlineMs ?? Date.now() + 50000;
   const sources: SourceStatus[] = [];
   const index = new MatchIndex();
 
@@ -149,12 +159,25 @@ export async function buildDay(fromMs: number, toMs: number): Promise<DayOdds> {
   if (isAggregatorConfigured()) {
     try {
       const known = new Set(index.list.map((m) => m.srId).filter((x): x is string => !!x));
-      const agg = await fetchAggregatorDay(fromMs, toMs, known);
+      const agg: Awaited<ReturnType<typeof fetchAggregatorDay>> = [];
+      let cutShort = false;
+      for (let d = 0; d < AGGREGATOR_DAYS; d++) {
+        const start = fromMs + d * DAY_MS;
+        if (start >= toMs) break;
+        if (Date.now() > deadlineMs) {
+          cutShort = true;
+          break;
+        }
+        agg.push(...(await fetchAggregatorDay(start, Math.min(toMs, start + DAY_MS), known, deadlineMs)));
+      }
       for (const a of agg) {
         const m = index.upsert(a);
         for (const [slug, b] of Object.entries(a.books)) setPlatform(m, canonical(slug), b.label, 'aggregator', b.odds);
       }
-      sources.push({ slug: 'oddspapi', label: 'OddsPapi', role: 'fallback', ok: true, matches: agg.length });
+      sources.push({
+        slug: 'oddspapi', label: 'OddsPapi', role: 'fallback', ok: true, matches: agg.length,
+        note: cutShort ? `Covers the first ${AGGREGATOR_DAYS} days; stopped early to stay within the time limit` : `Covers the first ${AGGREGATOR_DAYS} days`,
+      });
     } catch (err) {
       console.error('[odds/day] aggregator failed:', err);
       sources.push({ slug: 'oddspapi', label: 'OddsPapi', role: 'fallback', ok: false, matches: 0, note: String((err as Error).message).slice(0, 120) });

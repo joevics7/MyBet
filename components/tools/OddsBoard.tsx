@@ -4,6 +4,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Loader2, Search } from 'lucide-react';
 import { MARKETS, type DayMatch, type DayOdds, type MarketKey, type PlatformOdds } from '@/lib/odds/types';
 
+// What /api/odds/day returns: the stored snapshot (generatedAt is null before the first refresh).
+type BoardData = Omit<DayOdds, 'generatedAt' | 'from' | 'to'> & { generatedAt: string | null };
+
 const DAYS = 6;
 const PAGE = 30;
 const FIRST_ROWS = 4;
@@ -32,7 +35,7 @@ function bestPrices(platforms: PlatformOdds[], key: MarketKey, width: number): (
 export function OddsBoard() {
   const chips = useMemo(dayChips, []);
   const [day, setDay] = useState(0);
-  const [data, setData] = useState<DayOdds | null>(null);
+  const [data, setData] = useState<BoardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -88,14 +91,22 @@ export function OddsBoard() {
         />
       </div>
 
+      {data && !loading && (
+        <p className="mt-3 text-[11px] text-muted-foreground">
+          {data.generatedAt
+            ? `Odds last updated ${new Date(data.generatedAt).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}. They refresh three times a day.`
+            : 'Odds have not been collected yet. They refresh three times a day.'}
+        </p>
+      )}
+
       {loading && (
         <p className="mt-8 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" /> Gathering odds from the bookmakers…
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading odds…
         </p>
       )}
       {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
       {data && !loading && filtered.length === 0 && (
-        <p className="mt-4 text-sm text-muted-foreground">{q ? 'No matches found.' : 'No matches with odds for this day yet.'}</p>
+        <p className="mt-4 text-sm text-muted-foreground">{q ? 'No matches found.' : data.generatedAt ? 'No matches with odds for this day.' : 'Check back after the next refresh.'}</p>
       )}
 
       <div className="mt-3 space-y-3">

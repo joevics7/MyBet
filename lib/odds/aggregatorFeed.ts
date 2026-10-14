@@ -145,8 +145,12 @@ function toMatch(f: Json, wanted: Wanted[], names: Record<string, string>): Aggr
   };
 }
 
-export async function fetchAggregatorDay(fromMs: number, toMs: number, knownSrIds: Set<string>): Promise<AggregatorMatch[]> {
-  const started = Date.now();
+export async function fetchAggregatorDay(
+  fromMs: number,
+  toMs: number,
+  knownSrIds: Set<string>,
+  deadlineMs: number = Date.now() + TIME_BUDGET_MS,
+): Promise<AggregatorMatch[]> {
   const fixtures = await call<Json[]>(
     'fixtures',
     {
@@ -175,7 +179,7 @@ export async function fetchAggregatorDay(fromMs: number, toMs: number, knownSrId
   const [wanted, names] = await Promise.all([wantedMarkets(), bookmakerNames()]);
   const out: AggregatorMatch[] = [];
   for (const batch of batches) {
-    if (Date.now() - started > TIME_BUDGET_MS) break;
+    if (Date.now() > deadlineMs) break;
     try {
       const raw = await call<Json>('odds-by-tournaments', { tournamentIds: batch.join(',') }, { timeoutMs: 15000 });
       const rows: Json[] = Array.isArray(raw) ? raw : Array.isArray(raw?.fixtures) ? raw.fixtures : Object.values(raw ?? {}).filter((x): x is Json => typeof x === 'object');

@@ -15,9 +15,10 @@ export default function Page() {
       status="live"
       howItWorks={
         <p>
-          Open the page and every match for the day is already there with its odds. Each bookmaker's own prices are
-          used first, and a backup data provider fills in bookmakers and markets we can't read directly. The best price
-          in each column is highlighted. Nothing is stored.
+          Open the page and every match for the day is already there with its odds. Odds are collected three times a
+          day and kept until the next collection, so everyone sees the same snapshot, and the page shows when it was
+          last updated. Each bookmaker's own prices are used first, and a backup data provider fills in bookmakers and
+          markets we can't read directly. The best price in each column is highlighted.
         </p>
       }
       faq={[
