@@ -16,13 +16,9 @@ import {
 } from './sportybet';
 import { decodeBet9jaCode } from './bet9ja';
 import { decodeBangbetCode, encodeBangbetSlip } from './bangbet';
-import {
-  decodeBetwinnerCode,
-  encodeBetwinnerSlip,
-  decodeAfropariCode,
-  encodeAfropariSlip,
-  decode22betCode,
-} from './xbetFamily';
+import { decodeBetwinnerCode, encodeBetwinnerSlip } from './betwinner';
+import { decodeAfropariCode } from './afropari';
+import { decode22betCode, encode22betSlip } from './twentytwobet';
 import { decodeFootballcomCode, encodeFootballcomSlip } from './footballcom';
 import { decodeHelabetCode, encodeHelabetSlip } from './helabet';
 import { decodeMelbetCode, encodeMelbetSlip } from './melbet';
@@ -101,9 +97,8 @@ export const PLATFORMS: PlatformAdapter[] = [
     canSettle: false,
     verified: true,
   },
-  // Betwinner NG (1xBet family). Added 2026-10-14 from browser captures -- NOT yet tested live.
-  // Decode + create (create only for slips that came from a Betwinner decode, e.g. the Splitter).
-  // Not a Converter target: that needs a Betwinner line/feed lookup we don't have yet.
+  // Betwinner NG: own file (lib/services/betwinner.ts), fully captured -- decode request AND response, refresh, create.
+  // NOT yet tested live. Create only for slips decoded from Betwinner (e.g. the Splitter); not a Converter target.
   {
     slug: 'betwinner',
     label: 'Betwinner',
@@ -112,23 +107,16 @@ export const PLATFORMS: PlatformAdapter[] = [
     canSettle: false,
     verified: false,
   },
-  // Afropari: same engine as Betwinner. Its capture had NO decode/create request, so both are
-  // assumed to match Betwinner's -- UNCONFIRMED, added so it can be tested. Same limits as Betwinner.
-  {
-    slug: 'afropari',
-    label: 'Afropari',
-    decode: decodeAfropariCode,
-    encode: encodeAfropariSlip,
-    canSettle: false,
-    verified: false,
-  },
-  // 22bet NG: same engine again (partner 151). Decode only, assumed from Betwinner's -- UNCONFIRMED.
-  // Its capture has a create call, but for live games only and on a different path, so no create yet.
-  { slug: '22bet', label: '22bet', decode: decode22betCode, canSettle: false, verified: false },
-  // Helabet NG: same engine as Betwinner (lib/services/helabet.ts). Decode + create from a real capture
+  // Afropari: decode NOT implemented. The research has no decode or create request (the lookup sits behind
+  // a captcha/fingerprint check), so it reports "unsupported" rather than assuming another site's calls.
+  { slug: 'afropari', label: 'Afropari', decode: decodeAfropariCode, canSettle: false, verified: false },
+  // 22bet NG: decode NOT implemented (no decode request in the research). Create is built from its capture
+  // (own path, /LiveUtil/SaveCoupon) but needs 22bet's own match ids, so it is unreachable until decode exists.
+  { slug: '22bet', label: '22bet', decode: decode22betCode, encode: encode22betSlip, canSettle: false, verified: false },
+  // Helabet NG: own file (lib/services/helabet.ts). Decode + create from a real capture
   // (live basketball slip), NOT run live. Create only for slips decoded from Helabet.
   { slug: 'helabet', label: 'Helabet', decode: decodeHelabetCode, encode: encodeHelabetSlip, canSettle: false, verified: false },
-  // Melbet: same engine as Betwinner (lib/services/melbet.ts). Capture had the decode request but no
+  // Melbet: own file (lib/services/melbet.ts). Capture had the decode request but no
   // response body, so decode assumes Betwinner's shape -- UNCONFIRMED. Create from the capture, not run live.
   { slug: 'melbet', label: 'Melbet', decode: decodeMelbetCode, encode: encodeMelbetSlip, canSettle: false, verified: false },
   // Betpawa NG, added 2026-10-14 from a capture. Create-code contract is confirmed by the capture (JSON),

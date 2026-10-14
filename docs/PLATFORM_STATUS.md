@@ -12,17 +12,17 @@ browser capture and not yet run live.
 | Football.com | yes (fixed 2026-10-14) | yes | yes | yes | yes | Decode fixed against a real capture, not yet run live |
 | Betway | yes | yes | no | yes | yes | Tested 2026-10-10, works |
 | Bangbet | yes | yes (untested) | no | yes | no | Decode tested; rebuilt 2026-10-14 from captures, needs a retest |
-| Betwinner | captured | captured | no | yes | no | Not yet run live |
-| Helabet | captured | captured | no | yes | no | Same engine as Betwinner; real decode + create capture (live basketball slip), not run live |
-| Melbet | assumed (request captured) | captured | no | yes | no | Same engine as Betwinner; decode response not in the capture; not run live |
-| Afropari | guessed | guessed | no | yes | no | Not yet run live; no decode/create capture exists |
-| 22bet | guessed | no | no | yes | no | Not yet run live; no decode capture, create captured for live games only |
+| Betwinner | yes (captured) | yes (captured) | no | yes | no | Own file, fully captured (decode response + create, pre-match). Not run live |
+| Helabet | yes (captured) | yes (captured) | no | yes | no | Own file; captured on live basketball picks. Not run live |
+| Melbet | assumed response | yes (captured) | no | yes | no | Own file; decode response not in the capture. Not run live |
+| Afropari | no | no | no | no | no | Not implemented: no decode/create capture; lookup is behind a captcha check |
+| 22bet | no | built, unreachable | no | no | no | Decode not implemented (no capture). Create built from capture but needs 22bet match ids |
 | Betpawa | not mapped | captured | no | yes (once decode works) | no | Request built; response is protobuf with unknown layout. Create code from a Betpawa decode only |
 | MSport | yes (rebuilt 2026-10-14) | yes | no | yes | yes | Rebuilt from a capture, own adapter; not yet run live (capture was logged in) |
 | Stake | no | no | no | no | no | Tested 2026-10-10, does not work |
 | Bet9ja | paste-import only | no | no | yes (via paste-import) | no | Server request blocked by Akamai; manual route added 2026-10-14, untested |
 
-## Bot protection (applies to Betwinner and Afropari, probably others)
+## Bot protection (Betwinner, Afropari, 22bet, Helabet, Melbet; probably others)
 
 **Fingerprint token.** Every Betwinner and Afropari request carries an `x-hd` token minted by a
 browser fingerprinting check (a 214 KB encrypted payload posted to `/hd-api/external/verify`).
@@ -50,58 +50,41 @@ Bet9ja (hide it from the pickers via `PICKER_EXCLUDED` in `lib/telegram/menus.ts
   SportyBet family can be re-encoded.
 - Not covered: odds comparison feed, Predictor codes, Vault result checking.
 
-### Betwinner (`lib/services/xbetFamily.ts`)
-- Decode (`GetCoupon`), price refresh (`UpdateCoupon`) and create (`SaveCoupon`) come from a real
-  capture, not run live. See the bot-protection note above.
-- Confirmed by the capture: 1X2 (group 1, types 1/2/3). Assumed from the 1xBet family, unverified:
-  Total goals (group 17, types 9/10 with the line in `Param`), Both teams to score (group 19,
-  types 180/181). Every other market (handicap etc.) is shown with Betwinner's own text and left
-  unscored.
-- Create code works only for picks that came from a Betwinner decode (needs Betwinner's own
-  numeric game id and a price). The Splitter can use it; the Converter cannot target it.
-- Copied from the capture without proof: `Kind: 3`, `Summ: 1000` (stake placeholder), and
-  `Vid` 0 for one pick / 1 for several.
-- To make it a Converter target we need a request that lists matches with odds (a line feed).
-  Not in the research yet. The same gap blocks odds comparison and Predictor codes.
+### Betwinner (`lib/services/betwinner.ts`)
+- Standalone file, nothing shared with other bookmakers (the old shared engine `xbetFamily.ts` was removed 2026-10-14).
+- Everything is from a real capture of betwinner.ng: GetCoupon request and response, UpdateCoupon, SaveCoupon, on
+  pre-match football picks (`Kind` 3). Our create body is byte-for-byte the captured one when replayed.
+- Only 1X2 is mapped to a scoreable label (from the site's own `W1`/`X`/`W2` text). Over/Under and Both-to-score
+  were previously guessed from 1xBet convention; they are now left in the site's own wording (unscored) until a
+  capture shows their ids. Send a slip with a Total and a GG/NG pick to add them.
+- Each pick keeps its own `Kind` through decode and create (`rawSpecifier` = `p=<Param>;k=<Kind>`).
+- Same `x-hd` risk: not sent. Look for `[betwinner ... non-OK]` in logs. Create only for Betwinner-decoded picks; not a Converter target.
 
 ### Helabet (`lib/services/helabet.ts`)
-- Same engine as Betwinner (partner 237, group 768, country 132, currency 115). Decode, create and
-  price refresh all come from a real capture. Reuses `xbetFamily.ts` without changing it.
-- The captured slip was two live basketball games, so pre-match create (`Kind`) is unconfirmed, and
-  basketball picks are shown unscored (only football 1X2, totals and GG/NG are scored).
-- Same `x-hd` fingerprint token as Betwinner: not sent. Look for `[helabet ... non-OK]` in the logs.
-- Not a Converter target (no line feed in the research). Create works only for Helabet-decoded picks.
+- Standalone file. Partner 237, group 768, country 132, currency 115. Decode response, refresh and create from a
+  real capture of two LIVE basketball games (`Kind` 1), so pre-match is untested. Replayed create body is identical.
+- Football market ids are not mapped beyond 1X2 (see Betwinner). Same `x-hd` risk. Not a Converter target.
 
 ### Melbet (`lib/services/melbet.ts`)
-- Same engine as Betwinner and Helabet (partner 8, group 62, country 132, currency 115). Captured on
-  `melbet.com`; check whether Nigerian users are on `melbet.ng`.
-- The capture has the decode request and the create/refresh calls but **no decode response body**, so decode
-  assumes the Betwinner/Helabet response shape. Needs one real response to confirm.
-- Captured slip was live games (Kind 1), so pre-match create is unconfirmed.
-- Same `x-hd` token as the others: not sent. Look for `[melbet ... non-OK]` in the logs.
-- Not a Converter target. Create works only for Melbet-decoded picks.
+- Standalone file. Partner 8, group 62, country 132, currency 115, captured on `melbet.com` (check `melbet.ng`).
+- The capture has the decode REQUEST but no decode RESPONSE: decode reads the response like the Betwinner and
+  Helabet captures show it, which is unconfirmed here. Refresh sends `IsExpressBoost: true` as the site does.
+- Live picks only (`Kind` 1). Replayed create body is identical. Same `x-hd` risk. Not a Converter target.
 
-### Afropari (`lib/services/xbetFamily.ts`)
-- Same engine as Betwinner (partner 300, group 806, country 132 from the captured feed URL).
-- The capture had no decode or create request (the "decoding booking code" section captured a
-  captcha script). Both calls are assumed to match Betwinner's. Unconfirmed, and a guess may
-  simply be wrong.
-- The only feed captured, `topGamesByStat`, lists the top 10 games, which is not enough to find a
-  given match for the Converter.
-- Currency id was not visible in the capture, so it is omitted from `UpdateCoupon`.
-- Needs: the real decode request, the real create request, and a full line feed.
+### Afropari (`lib/services/afropari.ts`)
+- NOT implemented. The capture holds the booking-code page loading a captcha script and `POST /hd-api/external/verify`
+  (a short-lived token), plus UpdateCoupon price refreshes (partner 300, group 806, pre-match `Kind` 3). It has no
+  GetCoupon and no SaveCoupon request, so decode reports "unsupported" instead of assuming Betwinner's calls.
+- Needs a capture of the actual decode request and response, and of the create call. If the decode is gated by the
+  captcha check, it may not be possible from a server.
 
-### 22bet (`lib/services/xbetFamily.ts`)
-- Same engine as Betwinner and Afropari (partner 151). Same `x-hd` fingerprint token, so the
-  bot-protection note above applies.
-- The capture has `UpdateCoupon` and a create call, but no decode request. Decode is assumed to
-  match Betwinner's (`GetCoupon`). Unconfirmed.
-- Create is known but not built: `POST https://22bet.ng/LiveUtil/SaveCoupon` (a different path from
-  Betwinner's), body `{ Live, Summ, Lng, Vid, CfView, notWait, partner, Events: [...] }`, code returned
-  in `Value`. It was captured with LIVE games only (`Kind: 1`, `Live: true`); the pre-match body is
-  not known. Note: this suggests Kind 1 = live and Kind 3 = pre-match, which also means the Betwinner
-  create (which sends `Kind: 3`) would be wrong for live games.
-- Needs: the real decode request, a pre-match create request, a full line feed.
+### 22bet (`lib/services/twentytwobet.ts`)
+- Decode NOT implemented: the capture has no decode request. Reports "unsupported".
+- Create is built from the capture: `POST /LiveUtil/SaveCoupon` (not the `/service-api` path others use) with its
+  own body (`Live`, `Summ: 1`, `Opp*Images`, object `PlayersDuel`), preceded by UpdateCoupon in 22bet's own shape
+  (`NeedUpdateLine`, `UserId`, no Group/Country/Currency). Replayed body is identical to the capture.
+- Unreachable for now: a pick needs 22bet's own GameId/Type, which only a 22bet decode or match feed can supply.
+  Captured picks were all live (`Kind` 1, `Live: true`); pre-match is untested.
 
 ### Betpawa (`lib/services/betpawa.ts`, `lib/services/protobuf.ts`)
 - API is same-origin and anonymous, but responses are **protobuf** (`BookingCodeEventPriceListProto`,
