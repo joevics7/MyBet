@@ -10,6 +10,7 @@ export const PLATFORM_OPTIONS = [
   { slug: '1xbet', label: '1xBet' },
   { slug: 'betwinner', label: 'Betwinner' },
   { slug: 'helabet', label: 'Helabet' },
+  { slug: 'paripesa', label: 'Paripesa' },
   { slug: 'melbet', label: 'Melbet' },
   { slug: 'afropari', label: 'Afropari' },
   { slug: '22bet', label: '22bet' },

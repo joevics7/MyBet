@@ -13,6 +13,7 @@ browser capture and not yet run live.
 | Betway | yes | yes | no | yes | yes | Tested 2026-10-10, works |
 | Bangbet | yes | yes (untested) | no | yes | no | Decode tested; rebuilt 2026-10-14 from captures, needs a retest |
 | 1xBet | yes (captured) | no | no | yes | no | Own file, decode only (capture has no create call). Not run live |
+| Paripesa | assumed response | yes (captured) | no | yes | no | Own file; create captured (code 238NQ), decode response not in the file. Not run live |
 | Betwinner | yes (captured) | yes (captured) | no | yes | no | Own file, fully captured (decode response + create, pre-match). Not run live |
 | Helabet | yes (captured) | yes (captured) | no | yes | no | Own file; captured on live basketball picks. Not run live |
 | Melbet | assumed response | yes (captured) | no | yes | no | Own file; decode response not in the capture. Not run live |
@@ -58,6 +59,15 @@ Bet9ja (hide it from the pickers via `PICKER_EXCLUDED` in `lib/telegram/menus.ts
 - No create call in the capture, so no encode. Needs a capture of 1xBet's own SaveCoupon before create can be added.
 - Opens codes at `https://1xbet.ng/en?coupon-code=<code>` (deep link). Football picks are untested here; basketball
   totals show in the site's own wording and are unscored. Same `x-hd` risk: not sent. Not a Converter target.
+
+### Paripesa (`lib/services/paripesa.ts`)
+- The research file is named `parissa.txt`; the site is `paripesa.ng` (partner 188). Standalone file.
+- Create is captured for real: SaveCoupon on two pre-match football picks returned code `238NQ`; replayed body is identical.
+- Decode: the GetCoupon request is captured, but the file has no GetCoupon response, so decode assumes the Betwinner/Helabet
+  response shape (unconfirmed). Group 758 / Country 132 / Currency 115 come from an UpdateCoupon response (its request is
+  not in the file), so the price-refresh body is partly inferred.
+- The file's first block is unlabelled (a 9-pick sportsbook-format betslip JSON, then an UpdateCoupon response).
+  Same `x-hd` risk. Not a Converter target.
 
 ### Betwinner (`lib/services/betwinner.ts`)
 - Standalone file, nothing shared with other bookmakers (the old shared engine `xbetFamily.ts` was removed 2026-10-14).
