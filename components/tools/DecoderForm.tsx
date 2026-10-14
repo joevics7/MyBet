@@ -104,6 +104,20 @@ export function DecoderForm() {
               Decode
             </button>
           </div>
+          {platform === 'bet9ja' && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Bet9ja often blocks our server. If a code won&rsquo;t decode, open{' '}
+              <a
+                className="underline"
+                target="_blank"
+                rel="noopener noreferrer"
+                href={`https://coupon.bet9ja.com/desktop/feapi/CouponAjax/GetBookABetCouponV2?couponCode=${encodeURIComponent(!code.trim() || code.trim().startsWith('{') ? 'YOURCODE' : code.trim())}`}
+              >
+                this link
+              </a>{' '}
+              in your own browser, copy everything it shows, and paste it into the box above.
+            </p>
+          )}
         </div>
       </form>
 

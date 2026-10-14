@@ -16,7 +16,7 @@ browser capture and not yet run live.
 | Afropari | guessed | guessed | no | yes | no | Not yet run live; no decode/create capture exists |
 | MSport | no | no | no | no | no | Tested 2026-10-10, decode does not work |
 | Stake | no | no | no | no | no | Tested 2026-10-10, does not work |
-| Bet9ja | no | no | no | no | no | Blocked by Akamai bot protection from our server |
+| Bet9ja | paste-import only | no | no | yes (via paste-import) | no | Server request blocked by Akamai; manual route added 2026-10-14, untested |
 
 ## Bot protection (applies to Betwinner and Afropari, probably others)
 
@@ -81,10 +81,27 @@ Bet9ja (hide it from the pickers via `PICKER_EXCLUDED` in `lib/telegram/menus.ts
 - Converting to Betway does not support BTTS picks. Two picks from the same game cannot share a
   Betway slip.
 
-### Stake, Bet9ja
-- Stake decode takes a share link or bet ID, not a booking code, and does not work (tested
-  2026-10-10).
-- Bet9ja is blocked by Akamai Bot Manager from Vercel's servers.
+### Stake
+- Decode takes a share link or bet ID, not a booking code, and does not work (tested 2026-10-10).
+
+### Bet9ja (`lib/services/bet9ja.ts`)
+- Server-side decode (`GetBookABetCouponV2`) gets a 403 from Akamai at the edge (confirmed
+  2026-09-29, most likely IP reputation of Vercel's servers). We do not work around Akamai Bot
+  Manager: no residential proxies, headless browsers or forged sensor cookies.
+- Added 2026-10-14: **paste-import**. The Decoder shows a link to the coupon URL for the user to
+  open in their own browser; pasting the JSON it shows (text starting with `{`) is parsed by the
+  same code, no network call. Works on the website only (not in the Telegram bot). Untested live.
+  Unknown: whether that URL opens cleanly in a plain browser tab.
+- Fixed: Bet9ja draws were never scored (sign "X" was not recognised as a draw). Market text is now
+  built from the pick id (`S_1X2_1/X/2`, confirmed by the capture). Total goals (`S_OU@2.5_O`) and
+  GG/NG are built from earlier research / market names and are unverified.
+- Create code (not built): `POST apigw.bet9ja.com/sportsbook/placebet/BookABetV2`, form field
+  `BETSLIP` (JSON), the new code comes back as `data[0].RIS`. Needs Bet9ja's own event ids and pick
+  ids, which no other platform has, so converting TO Bet9ja needs a Bet9ja odds-feed capture. It
+  sits behind the same protection, so it will probably be blocked too.
+- Result checking: the coupon response has no per-pick results.
+- Pasted responses are not saved to the Vault (a code is needed), and the Telegram bot cannot take
+  them.
 
 ## Cross-cutting issues
 

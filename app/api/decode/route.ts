@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
       .from('decodes')
       .insert({
         platform_id: platformId,
-        source_code: code,
+        source_code: code.length > 64 ? `${code.slice(0, 61)}...` : code, // a pasted response can be long
         status: result.status,
         raw_response: result.raw ?? null,
       })
