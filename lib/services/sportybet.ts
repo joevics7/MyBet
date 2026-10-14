@@ -20,11 +20,6 @@ export interface ShareApiConfig {
   baseUrl: string; // e.g. https://www.sportybet.com/api/ng/orders/share
   origin: string;
   referer: string;
-  // Client identity headers. SportyBet's web site sends web/web; Football.com's own site sends
-  // wap/wap (confirmed by a 2026-10-14 capture). Defaults to web.
-  client?: string;
-  // SportyBet's decode URL carries a cache-busting `_t`; Football.com's real requests do not.
-  cacheBust?: boolean;
 }
 
 export const SPORTYBET_CONFIG: ShareApiConfig = {
@@ -58,7 +53,6 @@ interface RawMarket {
 
 interface RawEventOutcome {
   eventId: string;
-  sport?: { id?: string };
   homeTeamName: string;
   awayTeamName: string;
   estimateStartTime: number;
@@ -75,13 +69,11 @@ interface RawSelection {
 
 interface RawShareResponse {
   bizCode: number;
-  isAvailable?: boolean; // SportyBet sends it; Football.com does not
+  isAvailable: boolean;
   message: string;
   data?: {
     shareCode: string;
-    // SportyBet sends the ticket (pick list + total). Football.com does not: its picks are only
-    // the markets/outcomes left inside `outcomes` (one chosen outcome per market).
-    ticket?: {
+    ticket: {
       selections: RawSelection[];
       displayTotalOdds?: string;
     };
@@ -142,8 +134,8 @@ export async function encodeShareSlip(
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         Origin: cfg.origin,
         Referer: cfg.referer,
-        clientid: cfg.client ?? 'web',
-        platform: cfg.client ?? 'web',
+        clientid: 'web',
+        platform: 'web',
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(8000),
@@ -180,7 +172,7 @@ export async function decodeSportyBetCode(code: string): Promise<SportyBetDecode
 }
 
 export async function decodeShareCode(cfg: ShareApiConfig, code: string): Promise<SportyBetDecodeResult> {
-  const url = `${cfg.baseUrl}/${encodeURIComponent(code)}${cfg.cacheBust === false ? '' : `?_t=${Date.now()}`}`;
+  const url = `${cfg.baseUrl}/${encodeURIComponent(code)}?_t=${Date.now()}`;
 
   let res: Response;
   try {
@@ -191,8 +183,8 @@ export async function decodeShareCode(cfg: ShareApiConfig, code: string): Promis
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         Referer: cfg.referer,
-        clientid: cfg.client ?? 'web',
-        platform: cfg.client ?? 'web',
+        clientid: 'web',
+        platform: 'web',
       },
       // This is a live third-party endpoint, not ours -- don't let a hung
       // request hold a serverless function open indefinitely.
@@ -211,25 +203,14 @@ export async function decodeShareCode(cfg: ShareApiConfig, code: string): Promis
 
   const json = (await res.json()) as RawShareResponse;
 
-  if (json.bizCode !== 10000 || json.isAvailable === false || !json.data) {
+  if (json.bizCode !== 10000 || !json.isAvailable || !json.data) {
     return { status: 'invalid', shareCode: null, selections: [], totalOdds: null, raw: json };
   }
 
   const { data } = json;
-  const events = Array.isArray(data.outcomes) ? data.outcomes : [];
-  const outcomesByEventId = new Map(events.map((o) => [o.eventId, o]));
+  const outcomesByEventId = new Map(data.outcomes.map((o) => [o.eventId, o]));
 
-  // SportyBet lists the picks in `ticket.selections`. Football.com has no ticket: every market
-  // left in an event's `markets` is a pick, and its `outcomes` hold only the chosen outcome(s).
-  const picks: RawSelection[] = data.ticket?.selections
-    ? data.ticket.selections
-    : events.flatMap((e) =>
-        (e.markets ?? []).flatMap((m) =>
-          (m.outcomes ?? []).map((o) => ({ eventId: e.eventId, marketId: m.id, outcomeId: o.id, sportId: e.sport?.id })),
-        ),
-      );
-
-  const selections: NormalizedSelection[] = picks
+  const selections: NormalizedSelection[] = data.ticket.selections
     .map((sel) => {
       const event = outcomesByEventId.get(sel.eventId);
       if (!event) return null;
@@ -255,7 +236,7 @@ export async function decodeShareCode(cfg: ShareApiConfig, code: string): Promis
         isWinning: typeof outcome.isWinning === 'number' ? outcome.isWinning === 1 : null,
         rawMarketId: market.id,
         rawOutcomeId: outcome.id,
-        rawSportId: sel.sportId ?? event.sport?.id ?? 'sr:sport:1', // football is the only sport decoded so far; fall back sensibly
+        rawSportId: sel.sportId ?? 'sr:sport:1', // football is the only sport decoded so far; fall back sensibly
         rawSpecifier: market.specifier,
       } as NormalizedSelection;
     })
@@ -265,17 +246,11 @@ export async function decodeShareCode(cfg: ShareApiConfig, code: string): Promis
     return { status: 'invalid', shareCode: data.shareCode ?? null, selections: [], totalOdds: null, raw: json };
   }
 
-  // No displayTotalOdds from Football.com: multiply the picks' prices.
-  const product = selections.reduce((a, s) => a * s.odds, 1);
-  const totalOdds = data.ticket?.displayTotalOdds
-    ? parseFloat(data.ticket.displayTotalOdds)
-    : Number.isFinite(product) ? Math.round(product * 100) / 100 : null;
-
   return {
     status: 'ok',
     shareCode: data.shareCode,
     selections,
-    totalOdds,
+    totalOdds: data.ticket.displayTotalOdds ? parseFloat(data.ticket.displayTotalOdds) : null,
     raw: json,
   };
 }

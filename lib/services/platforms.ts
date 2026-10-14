@@ -23,6 +23,7 @@ import {
   encodeAfropariSlip,
   decode22betCode,
 } from './xbetFamily';
+import { decodeFootballcomCode, encodeFootballcomSlip } from './footballcom';
 import { decodeStakeBet } from './stake';
 import { decodeBetwayCode, encodeBetwaySlip } from './betway';
 import { decodeBetpawaCode, encodeBetpawaSlip } from './betpawa';
@@ -59,21 +60,17 @@ export const PLATFORMS: PlatformAdapter[] = [
     verified: true,
     deepLink: 'https://www.sportybet.com/ng/?shareCode={code}',
   }),
-  // SportyBet white-label: same stack, same IDs, same response shape.
-  shareFamily(
-    'footballcom',
-    'Football.com',
-    {
-      baseUrl: 'https://www.football.com/api/ng/orders/share',
-      origin: 'https://www.football.com',
-      referer: 'https://www.football.com/ng/',
-      // Football.com's own site sends wap/wap and no cache-busting `_t` (2026-10-14 capture).
-      client: 'wap',
-      cacheBust: false,
-    },
-    // Decode shape differs from SportyBet (no isAvailable, no ticket) -- handled in decodeShareCode.
-    { canSettle: true, verified: false, deepLink: 'https://www.football.com/ng/?shareCode={code}' },
-  ),
+  // SportyBet white-label: same paths and ids, but its own client headers and decode response
+  // shape, so it has its own adapter (lib/services/footballcom.ts). SportyBet's code is untouched.
+  {
+    slug: 'footballcom',
+    label: 'Football.com',
+    decode: decodeFootballcomCode,
+    encode: encodeFootballcomSlip,
+    canSettle: true,
+    verified: false,
+    deepLink: 'https://www.football.com/ng/?shareCode={code}',
+  },
   // Same Sportradar-style IDs; path differs. Response shape assumed to match
   // SportyBet's. TESTED 2026-10-10: decoding does NOT work. Hidden from the
   // Telegram pickers until it's fixed.
