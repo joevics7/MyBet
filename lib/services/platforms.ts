@@ -16,6 +16,7 @@ import {
 } from './sportybet';
 import { decodeBet9jaCode } from './bet9ja';
 import { decodeBangbetCode, encodeBangbetSlip } from './bangbet';
+import { decodeBetwinnerCode, encodeBetwinnerSlip } from './betwinner';
 import { decodeStakeBet } from './stake';
 import { decodeBetwayCode, encodeBetwaySlip } from './betway';
 
@@ -96,6 +97,17 @@ export const PLATFORMS: PlatformAdapter[] = [
     encode: encodeBetwaySlip,
     canSettle: false,
     verified: true,
+  },
+  // Betwinner NG (1xBet family). Added 2026-10-14 from browser captures -- NOT yet tested live.
+  // Decode + create (create only for slips that came from a Betwinner decode, e.g. the Splitter).
+  // Not a Converter target: that needs a Betwinner line/feed lookup we don't have yet.
+  {
+    slug: 'betwinner',
+    label: 'Betwinner',
+    decode: decodeBetwinnerCode,
+    encode: encodeBetwinnerSlip,
+    canSettle: false,
+    verified: false,
   },
   // Decode only. Input is a share link or bet ID ("sport:12345678"), not a
   // booking code. No create path exists. TESTED 2026-10-10: does NOT work.

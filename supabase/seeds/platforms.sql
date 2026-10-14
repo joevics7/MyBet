@@ -10,6 +10,7 @@ insert into platforms (slug, name, is_supported_decode, is_supported_encode, dee
   ('bangbet',     'Bangbet',      true,  false, 'https://www.bangbet.com/static/share/book.html?{code}', 5),
   ('bet9ja',      'Bet9ja',       true,  false, null, 6),
   ('stake',       'Stake',        true,  false, null, 7),
+  ('betwinner',   'Betwinner',    true,  true,  null, 11),
   ('1xbet',       '1xBet',        false, false, null, 8),
   ('betking',     'BetKing',      false, false, null, 9),
   ('nairabet',    'NairaBet',     false, false, null, 10)

@@ -86,6 +86,7 @@ export interface EncodeSelectionInput {
   marketId: string;
   outcomeId: string;
   specifier?: string; // e.g. "total=2.5" for Over/Under -- omit for markets without a line
+  odds?: number; // the pick's price at decode time; only platforms that need to be sent a price use it (Betwinner)
 }
 
 export interface EncodeResult {

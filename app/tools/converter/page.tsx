@@ -26,7 +26,7 @@ export default function Page() {
         {
           question: 'Which platforms can I convert to?',
           answer:
-            'SportyBet, Football.com, MSport and Betway. You can convert from more platforms than that, including Bangbet and Stake links, but those do not give us a way to create a new code yet.',
+            'SportyBet, Football.com, MSport and Betway. You can convert from more platforms than that, including Bangbet, Betwinner and Stake links, but those do not give us a way to create a new code yet.',
         },
         {
           question: 'Why did some picks not convert?',

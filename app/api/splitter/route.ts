@@ -107,6 +107,7 @@ export async function POST(req: NextRequest) {
           marketId: s.rawMarketId!,
           outcomeId: s.rawOutcomeId!,
           specifier: s.rawSpecifier,
+          odds: s.odds,
         })),
       );
       return {
