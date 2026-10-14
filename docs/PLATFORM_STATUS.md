@@ -15,6 +15,7 @@ browser capture and not yet run live.
 | Betwinner | captured | captured | no | yes | no | Not yet run live |
 | Afropari | guessed | guessed | no | yes | no | Not yet run live; no decode/create capture exists |
 | 22bet | guessed | no | no | yes | no | Not yet run live; no decode capture, create captured for live games only |
+| Betpawa | not mapped | captured | no | yes (once decode works) | no | Request built; response is protobuf with unknown layout. Create code from a Betpawa decode only |
 | MSport | no | no | no | no | no | Tested 2026-10-10, decode does not work |
 | Stake | no | no | no | no | no | Tested 2026-10-10, does not work |
 | Bet9ja | paste-import only | no | no | yes (via paste-import) | no | Server request blocked by Akamai; manual route added 2026-10-14, untested |
@@ -82,6 +83,19 @@ Bet9ja (hide it from the pickers via `PICKER_EXCLUDED` in `lib/telegram/menus.ts
   not known. Note: this suggests Kind 1 = live and Kind 3 = pre-match, which also means the Betwinner
   create (which sends `Kind: 3`) would be wrong for live games.
 - Needs: the real decode request, a pre-match create request, a full line feed.
+
+### Betpawa (`lib/services/betpawa.ts`, `lib/services/protobuf.ts`)
+- API is same-origin and anonymous, but responses are **protobuf** (`BookingCodeEventPriceListProto`,
+  schema `price.proto`, not public). `protobuf.ts` reads the wire format without a schema.
+- Create code (`POST /v3/booking-number`, JSON in, `{ code }` out) is confirmed by the capture, not run live.
+  A pick is Betpawa's own numeric price id, so it only works for slips decoded from Betpawa.
+- Decode request (`GET /v3/booking-number/<code>`) is built, but the capture has no response body, so
+  `mapBooking()` is empty: decode returns invalid and logs the response structure
+  (`[betpawa decode] unmapped response layout`). Needs one real decode response to map.
+- Not sent: cookies and `x-device-fingerprint`. If Cloudflare rejects server requests, look for
+  `[betpawa decode non-OK]` in the logs.
+- Converter target: needs the events feed (`/v4/events/lists/by-queries`, also protobuf) mapped.
+- Hidden from the Telegram pickers until decode works (`PICKER_EXCLUDED`).
 
 ### SportyBet family (SportyBet, Football.com, MSport)
 - SportyBet is the only platform where the Vault can auto-check results.

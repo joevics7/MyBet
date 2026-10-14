@@ -6,6 +6,7 @@ export const PLATFORM_OPTIONS = [
   { slug: 'msport', label: 'MSport' },
   { slug: 'betway', label: 'Betway' },
   { slug: 'bangbet', label: 'Bangbet' },
+  { slug: 'betpawa', label: 'Betpawa' },
   { slug: 'betwinner', label: 'Betwinner' },
   { slug: 'afropari', label: 'Afropari' },
   { slug: '22bet', label: '22bet' },
