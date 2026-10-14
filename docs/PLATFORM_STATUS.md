@@ -14,6 +14,7 @@ browser capture and not yet run live.
 | Bangbet | yes | yes (untested) | no | yes | no | Decode tested; rebuilt 2026-10-14 from captures, needs a retest |
 | Betwinner | captured | captured | no | yes | no | Not yet run live |
 | Helabet | captured | captured | no | yes | no | Same engine as Betwinner; real decode + create capture (live basketball slip), not run live |
+| Melbet | assumed (request captured) | captured | no | yes | no | Same engine as Betwinner; decode response not in the capture; not run live |
 | Afropari | guessed | guessed | no | yes | no | Not yet run live; no decode/create capture exists |
 | 22bet | guessed | no | no | yes | no | Not yet run live; no decode capture, create captured for live games only |
 | Betpawa | not mapped | captured | no | yes (once decode works) | no | Request built; response is protobuf with unknown layout. Create code from a Betpawa decode only |
@@ -70,6 +71,15 @@ Bet9ja (hide it from the pickers via `PICKER_EXCLUDED` in `lib/telegram/menus.ts
   basketball picks are shown unscored (only football 1X2, totals and GG/NG are scored).
 - Same `x-hd` fingerprint token as Betwinner: not sent. Look for `[helabet ... non-OK]` in the logs.
 - Not a Converter target (no line feed in the research). Create works only for Helabet-decoded picks.
+
+### Melbet (`lib/services/melbet.ts`)
+- Same engine as Betwinner and Helabet (partner 8, group 62, country 132, currency 115). Captured on
+  `melbet.com`; check whether Nigerian users are on `melbet.ng`.
+- The capture has the decode request and the create/refresh calls but **no decode response body**, so decode
+  assumes the Betwinner/Helabet response shape. Needs one real response to confirm.
+- Captured slip was live games (Kind 1), so pre-match create is unconfirmed.
+- Same `x-hd` token as the others: not sent. Look for `[melbet ... non-OK]` in the logs.
+- Not a Converter target. Create works only for Melbet-decoded picks.
 
 ### Afropari (`lib/services/xbetFamily.ts`)
 - Same engine as Betwinner (partner 300, group 806, country 132 from the captured feed URL).

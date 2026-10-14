@@ -25,6 +25,7 @@ import {
 } from './xbetFamily';
 import { decodeFootballcomCode, encodeFootballcomSlip } from './footballcom';
 import { decodeHelabetCode, encodeHelabetSlip } from './helabet';
+import { decodeMelbetCode, encodeMelbetSlip } from './melbet';
 import { decodeStakeBet } from './stake';
 import { decodeBetwayCode, encodeBetwaySlip } from './betway';
 import { decodeBetpawaCode, encodeBetpawaSlip } from './betpawa';
@@ -134,6 +135,9 @@ export const PLATFORMS: PlatformAdapter[] = [
   // Helabet NG: same engine as Betwinner (lib/services/helabet.ts). Decode + create from a real capture
   // (live basketball slip), NOT run live. Create only for slips decoded from Helabet.
   { slug: 'helabet', label: 'Helabet', decode: decodeHelabetCode, encode: encodeHelabetSlip, canSettle: false, verified: false },
+  // Melbet: same engine as Betwinner (lib/services/melbet.ts). Capture had the decode request but no
+  // response body, so decode assumes Betwinner's shape -- UNCONFIRMED. Create from the capture, not run live.
+  { slug: 'melbet', label: 'Melbet', decode: decodeMelbetCode, encode: encodeMelbetSlip, canSettle: false, verified: false },
   // Betpawa NG, added 2026-10-14 from a capture. Create-code contract is confirmed by the capture (JSON),
   // NOT run live. Decode: responses are protobuf with no public schema and the capture had no decode
   // response body, so the leg layout is unmapped -- decode returns 'invalid' and logs the structure
