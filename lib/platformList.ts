@@ -18,10 +18,10 @@ export const PLATFORM_OPTIONS = [
 
 // Platforms we can CREATE a new booking code on (the Converter's targets).
 // Keep in sync with the adapters that define `encode` in lib/services/platforms.ts.
-// MSport is left out: it was tested on 2026-10-10 and does not decode, so a code made
-// there cannot be read back or trusted.
+// MSport was rebuilt 2026-10-14 from a real capture (own adapter), but not yet run live.
 export const CONVERT_TARGETS = [
   { slug: 'sportybet', label: 'SportyBet' },
   { slug: 'footballcom', label: 'Football.com' },
   { slug: 'betway', label: 'Betway' },
+  { slug: 'msport', label: 'MSport' },
 ] as const;

@@ -18,7 +18,7 @@ browser capture and not yet run live.
 | Afropari | guessed | guessed | no | yes | no | Not yet run live; no decode/create capture exists |
 | 22bet | guessed | no | no | yes | no | Not yet run live; no decode capture, create captured for live games only |
 | Betpawa | not mapped | captured | no | yes (once decode works) | no | Request built; response is protobuf with unknown layout. Create code from a Betpawa decode only |
-| MSport | no | no | no | no | no | Tested 2026-10-10, decode does not work |
+| MSport | yes (rebuilt 2026-10-14) | yes | no | yes | yes | Rebuilt from a capture, own adapter; not yet run live (capture was logged in) |
 | Stake | no | no | no | no | no | Tested 2026-10-10, does not work |
 | Bet9ja | paste-import only | no | no | yes (via paste-import) | no | Server request blocked by Akamai; manual route added 2026-10-14, untested |
 
@@ -125,8 +125,13 @@ Bet9ja (hide it from the pickers via `PICKER_EXCLUDED` in `lib/telegram/menus.ts
   captured response only, not live. Not sent: cookies, `sporty-referer`, empty `operid`; if it still fails
   live, look for `invalid` on a real code and try adding those. Share link is
   `https://www.football.com/ng/?shareCode=<code>`.
-- MSport decode does not work (tested 2026-10-10); it is hidden from the Telegram pickers and
-  left out of Converter targets and Predictor codes.
+- MSport: the 2026-10-10 failure was because it was run through SportyBet's adapter, but MSport's
+  response shape (`data.bettableBetSlip[]`), create body (numeric `marketId`, `specifier: ""`) and
+  headers (`apilevel`, `channel`, `operid`, `deviceid`, `WEB`) all differ. Rebuilt 2026-10-14 in
+  `lib/services/msport.ts` from a capture. Not yet run live: the capture was a logged-in session and we
+  send no cookies, so anonymous access is untested. Expired codes return `bizCode 19000`. Result
+  checking is off (the capture's slip had not started). Back in the Telegram pickers and Converter
+  targets; still not in Predictor codes. If it fails live, check Vercel logs for `[msport ... non-OK]`.
 
 ### Betway
 - Decode and create work. Result checking is off (the decode does not report per-pick results).

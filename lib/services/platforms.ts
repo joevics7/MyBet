@@ -26,6 +26,7 @@ import {
 import { decodeFootballcomCode, encodeFootballcomSlip } from './footballcom';
 import { decodeHelabetCode, encodeHelabetSlip } from './helabet';
 import { decodeMelbetCode, encodeMelbetSlip } from './melbet';
+import { decodeMsportCode, encodeMsportSlip } from './msport';
 import { decodeStakeBet } from './stake';
 import { decodeBetwayCode, encodeBetwaySlip } from './betway';
 import { decodeBetpawaCode, encodeBetpawaSlip } from './betpawa';
@@ -73,19 +74,11 @@ export const PLATFORMS: PlatformAdapter[] = [
     verified: false,
     deepLink: 'https://www.football.com/ng/?shareCode={code}',
   },
-  // Same Sportradar-style IDs; path differs. Response shape assumed to match
-  // SportyBet's. TESTED 2026-10-10: decoding does NOT work. Hidden from the
-  // Telegram pickers until it's fixed.
-  shareFamily(
-    'msport',
-    'MSport',
-    {
-      baseUrl: 'https://www.msport.com/api/ng/orders/real-sports/order/share',
-      origin: 'https://www.msport.com',
-      referer: 'https://www.msport.com/ng/',
-    },
-    { canSettle: false, verified: false },
-  ),
+  // MSport: same paths and Sportradar ids as SportyBet, but its own response shape, request body and
+  // client headers, so it has its own adapter (lib/services/msport.ts), rebuilt 2026-10-14 from a
+  // capture. The old shared adapter failed the 2026-10-10 test. Not yet run live; the capture was a
+  // logged-in session, anonymous access is untested. Result checking stays off.
+  { slug: 'msport', label: 'MSport', decode: decodeMsportCode, encode: encodeMsportSlip, canSettle: false, verified: false },
   // Decoding works (tested 2026-10-10). 2026-10-14: switched to the confirmed bookingV2 endpoint,
   // kickoff time is now filled from the odds endpoint (it was missing, which blanked every
   // score), and market text is built from Sportradar ids. Create-code added from the captured
