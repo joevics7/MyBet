@@ -16,6 +16,7 @@ insert into platforms (slug, name, is_supported_decode, is_supported_encode, dee
   ('betpawa',     'Betpawa',      true,  true,  null, 14),
   ('helabet',     'Helabet',      true,  true,  null, 15),
   ('melbet',      'Melbet',       true,  true,  null, 16),
+  ('1xbet',       '1xBet',        true,  false, null, 17),
   ('1xbet',       '1xBet',        false, false, null, 8),
   ('betking',     'BetKing',      false, false, null, 9),
   ('nairabet',    'NairaBet',     false, false, null, 10)

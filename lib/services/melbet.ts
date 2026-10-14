@@ -13,9 +13,9 @@
 // 1xBet-engine captures (Betwinner, Helabet) show it. UNCONFIRMED for Melbet. Captured on melbet.com; if
 // Nigerian users use melbet.ng the origin needs changing. The refresh call sends IsExpressBoost: true as
 // the site does. Live picks only; pre-match is untested. Not a Converter target.
-// Markets: only 1X2 is mapped to a scoreable label, because the capture shows the site's own text for
-// it (GroupName "1x2", MarketName "W2" for Type 3). Every other market keeps the site's own wording
-// and is shown unscored. Over/Under and Both-to-score are NOT mapped: no capture shows their ids.
+// Markets: 1X2 is mapped from the site's own text (GroupName "1x2", MarketName W1/X/W2) and football Totals
+// from "Total Over/Under (line)". Every other market keeps the site's own wording and is shown unscored.
+// Both-to-score is NOT mapped: no capture shows its ids.
 //
 // NOT SENT, on purpose: cookies and the `x-hd` header (a browser-fingerprint token we do not fake).
 // If the site rejects server requests, the log shows "[melbet ...] non-OK".
@@ -79,6 +79,13 @@ export function marketLabel(e: Json): string {
     if (market === 'W1') return '1X2 - Home';
     if (market === 'X') return '1X2 - Draw';
     if (market === 'W2') return '1X2 - Away';
+  }
+  // Totals: the site words them "Total Over (2.5)" / "Total Under (2.5)" (group 17, the line is Param;
+  // seen in the 1xbet.ng capture). Only football (SportId 1) is relabelled, because the scorer understands
+  // goals, not basketball points.
+  const total = /^Total (Over|Under)\b/i.exec(market);
+  if (Number(e.SportId) === 1 && Number(e.GroupId) === 17 && total && Number(e.Param) > 0) {
+    return `Total Goals - ${/over/i.test(total[1]) ? 'Over' : 'Under'} ${e.Param}`;
   }
   const line = Number(e.Param) ? ` (${e.Param})` : '';
   return `${group || 'Market'}${line} - ${market || `type ${e.Type}`}`;

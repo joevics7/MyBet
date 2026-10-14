@@ -12,6 +12,7 @@ browser capture and not yet run live.
 | Football.com | yes (fixed 2026-10-14) | yes | yes | yes | yes | Decode fixed against a real capture, not yet run live |
 | Betway | yes | yes | no | yes | yes | Tested 2026-10-10, works |
 | Bangbet | yes | yes (untested) | no | yes | no | Decode tested; rebuilt 2026-10-14 from captures, needs a retest |
+| 1xBet | yes (captured) | no | no | yes | no | Own file, decode only (capture has no create call). Not run live |
 | Betwinner | yes (captured) | yes (captured) | no | yes | no | Own file, fully captured (decode response + create, pre-match). Not run live |
 | Helabet | yes (captured) | yes (captured) | no | yes | no | Own file; captured on live basketball picks. Not run live |
 | Melbet | assumed response | yes (captured) | no | yes | no | Own file; decode response not in the capture. Not run live |
@@ -50,13 +51,22 @@ Bet9ja (hide it from the pickers via `PICKER_EXCLUDED` in `lib/telegram/menus.ts
   SportyBet family can be re-encoded.
 - Not covered: odds comparison feed, Predictor codes, Vault result checking.
 
+### 1xBet (`lib/services/onexbet.ts`)
+- Standalone, decode only. From a real capture of 1xbet.ng: GetCoupon request and response (partner 159) on three
+  pre-match basketball picks (`Kind` 3), plus UpdateCoupon (group 412, country 132, currency 115). Replayed
+  response decodes to the captured total (5.95).
+- No create call in the capture, so no encode. Needs a capture of 1xBet's own SaveCoupon before create can be added.
+- Opens codes at `https://1xbet.ng/en?coupon-code=<code>` (deep link). Football picks are untested here; basketball
+  totals show in the site's own wording and are unscored. Same `x-hd` risk: not sent. Not a Converter target.
+
 ### Betwinner (`lib/services/betwinner.ts`)
 - Standalone file, nothing shared with other bookmakers (the old shared engine `xbetFamily.ts` was removed 2026-10-14).
 - Everything is from a real capture of betwinner.ng: GetCoupon request and response, UpdateCoupon, SaveCoupon, on
   pre-match football picks (`Kind` 3). Our create body is byte-for-byte the captured one when replayed.
-- Only 1X2 is mapped to a scoreable label (from the site's own `W1`/`X`/`W2` text). Over/Under and Both-to-score
-  were previously guessed from 1xBet convention; they are now left in the site's own wording (unscored) until a
-  capture shows their ids. Send a slip with a Total and a GG/NG pick to add them.
+- 1X2 is mapped from the site's own `W1`/`X`/`W2` text, and football Totals from its own `Total Over/Under (line)`
+  wording (that wording is seen in the 1xbet.ng capture, group 17; football totals themselves are untested).
+  Both-to-score is not mapped: no capture shows it, so it stays in the site's wording (unscored). Helabet and
+  Melbet use the same rules.
 - Each pick keeps its own `Kind` through decode and create (`rawSpecifier` = `p=<Param>;k=<Kind>`).
 - Same `x-hd` risk: not sent. Look for `[betwinner ... non-OK]` in logs. Create only for Betwinner-decoded picks; not a Converter target.
 

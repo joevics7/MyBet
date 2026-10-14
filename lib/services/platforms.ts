@@ -18,6 +18,7 @@ import { decodeBet9jaCode } from './bet9ja';
 import { decodeBangbetCode, encodeBangbetSlip } from './bangbet';
 import { decodeBetwinnerCode, encodeBetwinnerSlip } from './betwinner';
 import { decodeAfropariCode } from './afropari';
+import { decode1xbetCode } from './onexbet';
 import { decode22betCode, encode22betSlip } from './twentytwobet';
 import { decodeFootballcomCode, encodeFootballcomSlip } from './footballcom';
 import { decodeHelabetCode, encodeHelabetSlip } from './helabet';
@@ -113,6 +114,9 @@ export const PLATFORMS: PlatformAdapter[] = [
   // 22bet NG: decode NOT implemented (no decode request in the research). Create is built from its capture
   // (own path, /LiveUtil/SaveCoupon) but needs 22bet's own match ids, so it is unreachable until decode exists.
   { slug: '22bet', label: '22bet', decode: decode22betCode, encode: encode22betSlip, canSettle: false, verified: false },
+  // 1xBet NG: decode only, own file (lib/services/onexbet.ts), from a real capture (decode request AND response).
+  // No create call in the capture, so no encode. NOT run live.
+  { slug: '1xbet', label: '1xBet', decode: decode1xbetCode, canSettle: false, verified: false, deepLink: 'https://1xbet.ng/en?coupon-code={code}' },
   // Helabet NG: own file (lib/services/helabet.ts). Decode + create from a real capture
   // (live basketball slip), NOT run live. Create only for slips decoded from Helabet.
   { slug: 'helabet', label: 'Helabet', decode: decodeHelabetCode, encode: encodeHelabetSlip, canSettle: false, verified: false },
