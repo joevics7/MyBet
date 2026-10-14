@@ -1,5 +1,5 @@
 // Creates a booking code for each ticket on every platform we can create codes
-// on, so the page can show a ready-made code under each ticket.
+// on (SportyBet, Football.com, Betway), so the page can show a ready-made code under each ticket.
 //
 // Each pick is found on the platform (SportyBet's live feed for the SportyBet
 // family; Betway's feed for Betway) using the same resolvers as the Converter,
@@ -16,7 +16,8 @@ import type { MarketSelector } from '@/lib/services/confidenceEngine';
 import type { CandidateSelection, GeneratedTicket, TicketCode } from '@/lib/services/predictorSelection';
 import { resolveForBetway, resolveForSportyFamily, type Resolution } from '@/lib/converter/resolve';
 
-const SPORTY_FAMILY = ['sportybet', 'footballcom', 'msport'];
+// MSport is excluded: tested 2026-10-10 and its codes do not decode, so none can be read back.
+const SPORTY_FAMILY = ['sportybet', 'footballcom'];
 const ALL_PLATFORMS = [...SPORTY_FAMILY, 'betway'];
 const CONCURRENCY = 4;
 
