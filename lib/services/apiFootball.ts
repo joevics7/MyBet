@@ -12,6 +12,7 @@
 // the matcher and engine don't care which provider supplied the data.
 
 import type { TeamMatchResult } from './poissonModel';
+import { lookupForm, type StoredResult } from './formHistory';
 import type { FdMatch } from './footballData';
 
 const BASE_URL = 'https://v3.football.api-sports.io';
@@ -104,6 +105,11 @@ const FORM_TTL_MS = 6 * 60 * 60 * 1000;
 
 // Mirrors footballData.fetchTeamRecentForm.
 export async function fetchTeamRecentForm(teamId: number, limit = 10): Promise<TeamMatchResult[]> {
+  // Preferred: build the form from the stored daily results (no API request). Falls back to the per-team
+  // request below only while that history is not ready yet.
+  const stored = await lookupForm(teamId, limit);
+  if (stored) return stored;
+
   const hit = formCache.get(teamId);
   if (hit && Date.now() - hit.at < FORM_TTL_MS) return hit.data.slice(0, limit);
 
@@ -121,4 +127,17 @@ export async function fetchTeamRecentForm(teamId: number, limit = 10): Promise<T
     });
   formCache.set(teamId, { at: Date.now(), data });
   return data;
+}
+
+// Finished matches for one past date, compact, for the stored form history. ONE request covers all leagues.
+// A past day never changes, so the response can be cached for a long time.
+export async function fetchFinishedDay(date: string): Promise<StoredResult[]> {
+  const rows = await apiFetch<Json[]>(`/fixtures?date=${date}`, 86400);
+  const out: StoredResult[] = [];
+  for (const m of rows.map(toMatch)) {
+    if (m.status === 'FINISHED' && m.score.fullTime.home !== null && m.score.fullTime.away !== null) {
+      out.push([m.homeTeam.id, m.awayTeam.id, m.score.fullTime.home, m.score.fullTime.away]);
+    }
+  }
+  return out;
 }
