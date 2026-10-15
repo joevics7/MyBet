@@ -88,6 +88,9 @@ function TicketCard({ ticket }: { ticket: PredictorTicket }) {
         <div className="flex items-center gap-2">
           <CheckCircle2 className="h-4 w-4 text-[hsl(var(--seal))]" />
           <p className="font-serif font-semibold">Target odds ~{ticket.target_band}</p>
+          <span className="rounded-sm border border-border px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wide text-muted-foreground">
+            {ticket.odds_basis === 'bookmaker' ? 'Bookmaker odds' : 'Model odds'}
+          </span>
         </div>
         <span className="text-xs font-mono text-muted-foreground">
           {ticket.odds_basis === 'bookmaker' ? 'Odds' : 'Model odds'}: {ticket.combined_odds.toFixed(2)} &middot; Avg confidence:{' '}
@@ -137,58 +140,22 @@ function TicketCard({ ticket }: { ticket: PredictorTicket }) {
   );
 }
 
-const TABS = [
-  {
-    key: 'bookmaker' as const,
-    label: 'Bookmaker odds',
-    blurb:
-      'Games listed on SportyBet, with SportyBet\u2019s real prices when the tickets were built. They can change, so check the price on the platform before you bet.',
-    empty: 'No bookmaker-odds tickets today. The bookmaker feed may have been unavailable, or no combination was confident enough.',
-  },
-  {
-    key: 'model' as const,
-    label: 'Model odds',
-    blurb:
-      'A wider set of games from our football data, including leagues bookmakers may list differently. Odds here are our model\u2019s implied fair odds (1 / estimated probability), so a platform\u2019s price will differ. Any booking code shows the platform\u2019s own odds.',
-    empty: 'No model-odds tickets today. Today may have been too light a fixture day for a confident pick.',
-  },
-];
-
+// Both predictors in one list, band by band: the bookmaker-odds ticket for a band, then the model-odds ticket
+// for the same band, and so on. A ticket only exists if it was computed, so nothing empty is shown.
 export function PredictorTickets({ tickets }: { tickets: PredictorTicket[] }) {
-  const by = (basis: 'bookmaker' | 'model') =>
-    tickets.filter((t) => (t.odds_basis ?? 'model') === basis).sort((a, b) => a.target_band - b.target_band);
-  const sets = { bookmaker: by('bookmaker'), model: by('model') };
-  const [tab, setTab] = useState<'bookmaker' | 'model'>(sets.bookmaker.length > 0 ? 'bookmaker' : 'model');
-  const current = TABS.find((t) => t.key === tab)!;
+  const rank = (t: PredictorTicket) => (t.odds_basis === 'bookmaker' ? 0 : 1);
+  const ordered = [...tickets].sort((a, b) => a.target_band - b.target_band || rank(a) - rank(b));
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2" role="tablist">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            role="tab"
-            aria-selected={tab === t.key}
-            onClick={() => setTab(t.key)}
-            className={`rounded-sm border px-3 py-2 text-sm ${
-              tab === t.key ? 'border-[hsl(var(--ink))] bg-[hsl(var(--ink))] text-[hsl(var(--paper))]' : 'border-border'
-            }`}
-          >
-            {t.label}
-            <span className="ml-1.5 font-mono text-xs opacity-70">{sets[t.key].length}</span>
-          </button>
-        ))}
-      </div>
-
       <p className="text-xs text-muted-foreground bg-muted/40 border border-border rounded-sm px-3 py-2">
-        {current.blurb} Statistical analysis, not a guarantee.
+        <strong>Bookmaker odds</strong>: games listed on SportyBet, with SportyBet&rsquo;s real prices when the tickets were built (they can
+        change, so check the price before you bet). <strong>Model odds</strong>: a wider set of games from our football data, priced at our
+        model&rsquo;s implied fair odds (1 / estimated probability), so a platform&rsquo;s price will differ. Statistical analysis, not a guarantee.
       </p>
-
-      {sets[tab].length === 0 ? (
-        <div className="rounded-sm border border-dashed border-border bg-muted/40 p-5 text-sm text-muted-foreground">{current.empty}</div>
-      ) : (
-        sets[tab].map((ticket) => <TicketCard key={ticket.id} ticket={ticket} />)
-      )}
+      {ordered.map((ticket) => (
+        <TicketCard key={ticket.id} ticket={ticket} />
+      ))}
     </div>
   );
 }

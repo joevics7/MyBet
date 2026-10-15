@@ -121,6 +121,7 @@ async function fromBookmaker(started: number): Promise<Collected | null> {
         if (!scored || odds === null) continue;
         candidates.push({
           externalEventId: g.srId ?? `${g.home}|${g.away}|${g.kickoff}`,
+          gameKey: `${fixture.provider}:${fixture.matchId}`,
           homeTeam: g.home,
           awayTeam: g.away,
           competition: g.league,
@@ -177,6 +178,7 @@ async function fromFixtures(started: number): Promise<Collected> {
         const modelOdds = safeOdds(scored.probability);
         candidates.push({
           externalEventId: String(f.id),
+          gameKey: `${useAf ? 'apifootball' : 'footballdata'}:${f.id}`,
           homeTeam: f.homeTeam.name,
           awayTeam: f.awayTeam.name,
           competition: f.competition.name,

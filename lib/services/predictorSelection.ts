@@ -22,6 +22,9 @@ export interface TicketCode {
 
 export interface CandidateSelection {
   externalEventId: string;
+  // Stable id of the real match across both predictors (provider:matchId), so the same game is never used
+  // on two tickets even when the bookmaker set and the model set name it differently.
+  gameKey?: string;
   homeTeam: string;
   awayTeam: string;
   competition: string;
@@ -54,6 +57,8 @@ const MIN_CONFIDENCE = 80;    // a pick must EXCEED this confidence (set 2026-10
 const MAX_STRAIGHT_WINS_PER_TICKET = 1; // straight win = 1X2 home/away; capped so tickets are not all outright wins
 const MAX_POOL_SIZE = 40;     // cap search space so this stays fast in a serverless function
 const MAX_LEGS = 6;           // a ticket shouldn't need more than this to hit odds 5.0 at reasonable confidence
+
+const gameOf = (c: CandidateSelection) => c.gameKey ?? c.externalEventId;
 
 // Under-goals picks are never published. "Straight win" = a 1X2 home or away pick (a draw is not a win).
 const isUnder = (c: CandidateSelection) => /^under\b/i.test(c.market);
@@ -92,16 +97,16 @@ function buildTicketForBand(
 
     for (let i = startIdx; i < pool.length; i++) {
       const c = pool[i];
-      if (used.has(c.externalEventId) || usedEvents.has(c.externalEventId)) continue;
+      if (used.has(gameOf(c)) || usedEvents.has(gameOf(c))) continue;
       const win = isStraightWin(c) ? 1 : 0;
       if (wins + win > MAX_STRAIGHT_WINS_PER_TICKET) continue;
 
       const newOdds = odds * c.odds;
       if (newOdds > overshootCutoff) continue;
 
-      used.add(c.externalEventId);
+      used.add(gameOf(c));
       search(i + 1, used, newOdds, [...chosen, c], scoreSum + c.score, wins + win);
-      used.delete(c.externalEventId);
+      used.delete(gameOf(c));
     }
   }
 
@@ -119,7 +124,8 @@ function buildTicketForBand(
   };
 }
 
-export function generateDailyTickets(candidates: CandidateSelection[]): GeneratedTicket[] {
+// `usedGames` is shared between the bookmaker run and the model run so no game appears on two tickets.
+export function generateDailyTickets(candidates: CandidateSelection[], usedGames: Set<string> = new Set()): GeneratedTicket[] {
   const pool = candidates
     .filter((c) => c.score > MIN_CONFIDENCE && !isUnder(c))
     .sort((a, b) => b.score - a.score)
@@ -127,13 +133,13 @@ export function generateDailyTickets(candidates: CandidateSelection[]): Generate
 
   const tickets: GeneratedTicket[] = [];
   const taken = new Set<string>();
-  const usedEvents = new Set<string>(); // each game appears on at most ONE ticket across all bands
+  const usedEvents = usedGames; // each game appears on at most ONE ticket, across all bands and both predictors
   for (const band of TARGET_BANDS) {
     const ticket = buildTicketForBand(pool, band, taken, usedEvents);
     if (ticket) {
       tickets.push(ticket);
       taken.add(signature(ticket.selections));
-      ticket.selections.forEach((x) => usedEvents.add(x.externalEventId));
+      ticket.selections.forEach((x) => usedEvents.add(gameOf(x)));
     }
     // A band with no valid combination is simply skipped -- a light
     // fixture day publishing fewer than 5 tickets is expected behavior,

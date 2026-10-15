@@ -9,7 +9,7 @@
 // - Game details are fetched ONCE per run and every prediction/ticket is
 //   calculated from that single fetch, then stored in predictor_tickets.
 //   Visitors only ever read the stored tickets; nothing is fetched per visit.
-// - Two sets are published every day (two tabs on the page):
+// - Two predictors publish every day, shown together on the page (no tabs), band by band:
 //     'bookmaker': the day's games from SportyBet's feed with REAL odds;
 //     'model':     fixtures from our football data with model-implied odds.
 //   Different games, different odds. Up to five tickets (odds bands) per set.
@@ -18,7 +18,7 @@
 //   timeout can never lose the tickets themselves.
 // - Re-running the same day replaces that day's tickets.
 // - Ticket rules (lib/services/predictorSelection.ts): every pick must exceed 80 confidence; no Under-goals
-//   picks; at most 1 straight win (1X2 home/away) per ticket; each game appears on only ONE ticket per set.
+//   picks; at most 1 straight win (1X2 home/away) per ticket; each game appears on only ONE ticket (across both predictors).
 //   On a thin day this means fewer than 5 tickets are published (a band with no valid combination is skipped).
 import { NextRequest, NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
@@ -134,8 +134,10 @@ async function runPredictorJob(): Promise<NextResponse> {
   const scanMs = Date.now() - startedAt;
 
   // 2) Build tickets per set, then write the analysis for both.
-  const bookmakerTickets = bookmaker ? generateDailyTickets(bookmaker.candidates) : [];
-  const modelTickets = model ? generateDailyTickets(model.candidates) : [];
+  // One shared set of used games: no game appears on two tickets, within or across the two predictors.
+  const usedGames = new Set<string>();
+  const bookmakerTickets = bookmaker ? generateDailyTickets(bookmaker.candidates, usedGames) : [];
+  const modelTickets = model ? generateDailyTickets(model.candidates, usedGames) : [];
   const all = [...bookmakerTickets, ...modelTickets];
 
   const analysisStartedAt = Date.now();
