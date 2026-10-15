@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { waitUntil } from '@vercel/functions';
 import { fetchStatareaPredictions } from '@/lib/services/statarea';
 import { fetchPredictzPredictions } from '@/lib/services/predictz';
 import { upsertTipsterPredictions } from '@/lib/services/tipsterCache';
@@ -32,21 +33,36 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  try {
-    return await runRefresh();
-  } catch (err) {
-    console.error('[tipster-refresh cron] unhandled error:', err);
-    return NextResponse.json(
-      { error: 'Unhandled error', message: err instanceof Error ? err.message : String(err) },
-      { status: 500 },
-    );
+  // Foreground run (manual testing): add ?wait=1 to get the full JSON report.
+  if (req.nextUrl.searchParams.get('wait') === '1') {
+    try {
+      return await runRefresh();
+    } catch (err) {
+      console.error('[tipster-refresh cron] unhandled error:', err);
+      return NextResponse.json(
+        { error: 'Unhandled error', message: err instanceof Error ? err.message : String(err) },
+        { status: 500 },
+      );
+    }
   }
+
+  // Normal run (cron-job.org): it drops a request after ~30s and this job scrapes 6 pages, so answer
+  // right away and finish in the background. Results/errors go to the function logs ("[tipster-refresh cron] ...").
+  waitUntil(
+    runRefresh()
+      .then(async (res) => console.log('[tipster-refresh cron] finished:', JSON.stringify(await res.json())))
+      .catch((err) => console.error('[tipster-refresh cron] unhandled error:', err)),
+  );
+  return NextResponse.json({ status: 'started', note: 'Running in the background. Add ?wait=1 to run in the foreground and see the report.' }, { status: 202 });
 }
 
 async function runRefresh(): Promise<NextResponse> {
   const results: Record<string, { ok: boolean; count: number; error?: string }> = {};
 
-  for (let daysAhead = 0; daysAhead <= 2; daysAhead++) {
+  // The two sources run side by side (one chain each, days one after another), so the whole job takes
+  // about as long as the slower source instead of the sum of all six scrapes.
+  const statareaChain = async () => {
+   for (let daysAhead = 0; daysAhead <= 2; daysAhead++) {
     const date = dateDaysFromNow(daysAhead);
 
     // Statarea: date is a real URL param, fetch directly for this date.
@@ -79,6 +95,13 @@ async function runRefresh(): Promise<NextResponse> {
       results[`statarea-${date}`] = { ok: false, count: 0, error: String(err) };
     }
 
+   }
+  };
+
+  const predictzChain = async () => {
+   for (let daysAhead = 0; daysAhead <= 2; daysAhead++) {
+    const date = dateDaysFromNow(daysAhead);
+
     // Predictz: only has today/tomorrow/one-later-date as fetchable
     // windows, which is exactly what daysAhead (0/1/2) maps to.
     try {
@@ -109,7 +132,10 @@ async function runRefresh(): Promise<NextResponse> {
       console.error('[tipster-refresh cron] predictz failed for', date, err);
       results[`predictz-${date}`] = { ok: false, count: 0, error: String(err) };
     }
-  }
+   }
+  };
+
+  await Promise.all([statareaChain(), predictzChain()]);
 
   return NextResponse.json({ refreshedAt: new Date().toISOString(), results });
 }

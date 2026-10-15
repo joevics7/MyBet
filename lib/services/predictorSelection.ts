@@ -50,9 +50,14 @@ export interface GeneratedTicket {
 
 const TARGET_BANDS = [1.5, 2, 3, 4, 5];
 const TOLERANCE = 0.15;       // combined odds must land within +/-15% of target
-const MIN_CONFIDENCE = 60;    // confidence floor -- below this, not a "safe enough" pick
+const MIN_CONFIDENCE = 80;    // a pick must EXCEED this confidence (set 2026-10-15; was 60)
+const MAX_STRAIGHT_WINS_PER_TICKET = 1; // straight win = 1X2 home/away; capped so tickets are not all outright wins
 const MAX_POOL_SIZE = 40;     // cap search space so this stays fast in a serverless function
 const MAX_LEGS = 6;           // a ticket shouldn't need more than this to hit odds 5.0 at reasonable confidence
+
+// Under-goals picks are never published. "Straight win" = a 1X2 home or away pick (a draw is not a win).
+const isUnder = (c: CandidateSelection) => /^under\b/i.test(c.market);
+const isStraightWin = (c: CandidateSelection) => /^1X2 - (home|away)\b/i.test(c.market);
 
 // Bounded depth-first search: tries combinations of the highest-confidence
 // candidates first, stops exploring a branch once it overshoots the
@@ -63,14 +68,19 @@ const signature = (sels: CandidateSelection[]) =>
 
 // `taken` holds tickets already published for other bands: adjacent bands'
 // odds windows overlap, and showing the same ticket twice isn't useful.
-function buildTicketForBand(pool: CandidateSelection[], target: number, taken: Set<string> = new Set()): GeneratedTicket | null {
+function buildTicketForBand(
+  pool: CandidateSelection[],
+  target: number,
+  taken: Set<string> = new Set(),
+  usedEvents: Set<string> = new Set(), // games already on another ticket today: never reused
+): GeneratedTicket | null {
   const lower = target * (1 - TOLERANCE);
   const upper = target * (1 + TOLERANCE);
   const overshootCutoff = target * (1 + TOLERANCE) * 1.6; // prune well past the tolerance window
 
   let best: { selections: CandidateSelection[]; odds: number; avgScore: number } | null = null;
 
-  function search(startIdx: number, used: Set<string>, odds: number, chosen: CandidateSelection[], scoreSum: number) {
+  function search(startIdx: number, used: Set<string>, odds: number, chosen: CandidateSelection[], scoreSum: number, wins = 0) {
     if (chosen.length > 0 && odds >= lower && odds <= upper && !taken.has(signature(chosen))) {
       const avgScore = scoreSum / chosen.length;
       if (!best || avgScore > best.avgScore) {
@@ -82,13 +92,15 @@ function buildTicketForBand(pool: CandidateSelection[], target: number, taken: S
 
     for (let i = startIdx; i < pool.length; i++) {
       const c = pool[i];
-      if (used.has(c.externalEventId)) continue;
+      if (used.has(c.externalEventId) || usedEvents.has(c.externalEventId)) continue;
+      const win = isStraightWin(c) ? 1 : 0;
+      if (wins + win > MAX_STRAIGHT_WINS_PER_TICKET) continue;
 
       const newOdds = odds * c.odds;
       if (newOdds > overshootCutoff) continue;
 
       used.add(c.externalEventId);
-      search(i + 1, used, newOdds, [...chosen, c], scoreSum + c.score);
+      search(i + 1, used, newOdds, [...chosen, c], scoreSum + c.score, wins + win);
       used.delete(c.externalEventId);
     }
   }
@@ -109,17 +121,19 @@ function buildTicketForBand(pool: CandidateSelection[], target: number, taken: S
 
 export function generateDailyTickets(candidates: CandidateSelection[]): GeneratedTicket[] {
   const pool = candidates
-    .filter((c) => c.score >= MIN_CONFIDENCE)
+    .filter((c) => c.score > MIN_CONFIDENCE && !isUnder(c))
     .sort((a, b) => b.score - a.score)
     .slice(0, MAX_POOL_SIZE);
 
   const tickets: GeneratedTicket[] = [];
   const taken = new Set<string>();
+  const usedEvents = new Set<string>(); // each game appears on at most ONE ticket across all bands
   for (const band of TARGET_BANDS) {
-    const ticket = buildTicketForBand(pool, band, taken);
+    const ticket = buildTicketForBand(pool, band, taken, usedEvents);
     if (ticket) {
       tickets.push(ticket);
       taken.add(signature(ticket.selections));
+      ticket.selections.forEach((x) => usedEvents.add(x.externalEventId));
     }
     // A band with no valid combination is simply skipped -- a light
     // fixture day publishing fewer than 5 tickets is expected behavior,
