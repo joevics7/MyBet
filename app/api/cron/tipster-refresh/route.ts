@@ -98,8 +98,9 @@ async function runRefresh(): Promise<NextResponse> {
    }
   };
 
-  const predictzChain = async () => {
-   for (let daysAhead = 0; daysAhead <= 2; daysAhead++) {
+  // Each PredictZ day is a ZenRows fetch + a Gemini parse, so the three days run in parallel (they are
+  // independent: different dates, different cache rows) to stay inside the function time limit.
+  const predictzDay = async (daysAhead: number) => {
     const date = dateDaysFromNow(daysAhead);
 
     // Predictz: only has today/tomorrow/one-later-date as fetchable
@@ -132,8 +133,8 @@ async function runRefresh(): Promise<NextResponse> {
       console.error('[tipster-refresh cron] predictz failed for', date, err);
       results[`predictz-${date}`] = { ok: false, count: 0, error: String(err) };
     }
-   }
   };
+  const predictzChain = () => Promise.all([0, 1, 2].map(predictzDay));
 
   await Promise.all([statareaChain(), predictzChain()]);
 
