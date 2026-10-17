@@ -87,32 +87,46 @@ export async function geminiExtractMatches(opts: ExtractOptions): Promise<AiExtr
     `- If the input line has an id, return it unchanged in "id". Otherwise omit "id".\n` +
     `- Output JSON only.\n\nINPUT:\n${opts.input}`;
 
-  let res: Response;
-  try {
-    res = await fetch(GEMINI_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0,
-          maxOutputTokens: opts.maxOutputTokens ?? 32000,
-          responseMimeType: 'application/json',
-          responseSchema: RESPONSE_SCHEMA,
-        },
-      }),
-      signal: AbortSignal.timeout(opts.timeoutMs ?? 40000),
-    });
-  } catch (err) {
-    console.error(`[tipsterAi:${opts.source}] request threw:`, err);
-    return { rows: [], returned: 0, rejected: 0, error: `request failed: ${String(err)}` };
+  // Gemini regularly answers 503 ("high demand") or 429 for a few seconds at a time. Retry those (and only
+  // those) with a short pause, inside one overall deadline so a slow day can never run past the caller's limit.
+  const deadline = Date.now() + (opts.timeoutMs ?? 40000);
+  const body = JSON.stringify({
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: 0,
+      maxOutputTokens: opts.maxOutputTokens ?? 32000,
+      responseMimeType: 'application/json',
+      responseSchema: RESPONSE_SCHEMA,
+    },
+  });
+
+  let res: Response | null = null;
+  let lastError = 'no attempt made';
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const remaining = deadline - Date.now();
+    if (remaining < 4000) break;
+    try {
+      res = await fetch(GEMINI_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body,
+        signal: AbortSignal.timeout(remaining),
+      });
+    } catch (err) {
+      console.error(`[tipsterAi:${opts.source}] request threw:`, err);
+      return { rows: [], returned: 0, rejected: 0, error: `request failed (attempt ${attempt}): ${String(err)}` };
+    }
+    if (res.ok) break;
+    const errBody = (await res.text()).slice(0, 200);
+    lastError = `Gemini HTTP ${res.status}: ${errBody}`;
+    console.error(`[tipsterAi:${opts.source}] attempt ${attempt} non-OK:`, res.status, errBody);
+    const retryable = res.status === 503 || res.status === 429 || res.status === 500;
+    res = null;
+    if (!retryable) break;
+    await new Promise((r) => setTimeout(r, 1500 * attempt));
   }
 
-  if (!res.ok) {
-    const body = (await res.text()).slice(0, 300);
-    console.error(`[tipsterAi:${opts.source}] non-OK:`, res.status, body);
-    return { rows: [], returned: 0, rejected: 0, error: `Gemini HTTP ${res.status}: ${body}` };
-  }
+  if (!res) return { rows: [], returned: 0, rejected: 0, error: lastError };
 
   let parsed: unknown;
   try {
