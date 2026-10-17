@@ -10,9 +10,27 @@
 //
 // Only today's page is fetched here. The tomorrow page has not been inspected yet.
 
-import { stripHtml } from './zenrows';
 import type { PredictedScore } from './scoreToMarkets';
 import { geminiExtractChunked } from './tipsterAi';
+
+// Like stripHtml but block-level tags become line breaks, so the league heading and the "Home vs Away" line
+// stay on separate lines (the markdown view of the page showed them as separate elements). That makes the
+// rule-based team split below possible without AI.
+export function stripHtmlLines(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/?(?:p|div|li|ul|ol|h[1-6]|tr|table|section|article|header|footer|nav|main)\b[^>]*>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&#0?39;|&#8217;|&rsquo;/g, "'")
+    .split('\n')
+    .map((l) => l.replace(/[ \t]+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n');
+}
 
 const SOCCERTIPS_URL = 'https://soccertips.co.za/markets/win-draw-win-tips/';
 const UA =
@@ -30,6 +48,8 @@ export interface SoccerTipsDiagnostics {
   aiRejected: number;
   scoreMismatches: number; // Gemini score != regex score (regex wins)
   aiError: string | null;
+  namesFromAi: number;
+  namesFromRule: number; // used when Gemini failed or was rejected -- check these for a league name glued onto the home team
 }
 
 export interface SoccerTipsResult {
@@ -47,6 +67,8 @@ const LEAD_CHARS = 170; // enough text before "Bet Now" to hold "[1. League] Hom
 interface Block {
   index: number;
   before: string; // text before "Bet Now": optional league + "Home vs Away"
+  ruleHome: string; // rule-based split of the last "X vs Y" line (no AI)
+  ruleAway: string;
   homeScore: number;
   awayScore: number;
   outcome: string;
@@ -62,13 +84,15 @@ export function extractBlocks(text: string): Block[] {
     if (!m || betNow < 0) return;
     const before = c.slice(Math.max(0, betNow - LEAD_CHARS), betNow).trim();
     if (!/\svs\s/i.test(before)) return;
-    blocks.push({ index: blocks.length, before, homeScore: parseInt(m[2], 10), awayScore: parseInt(m[3], 10), outcome: m[1] });
+    const teamsLine = before.split('\n').map((l) => l.trim()).filter((l) => /\svs\s/i.test(l)).pop() ?? '';
+    const tm = teamsLine.match(/^(.*?)\s+vs\s+(.*)$/i);
+    blocks.push({ index: blocks.length, before, ruleHome: tm?.[1].trim() ?? '', ruleAway: tm?.[2].trim() ?? '', homeScore: parseInt(m[2], 10), awayScore: parseInt(m[3], 10), outcome: m[1] });
   });
   return blocks;
 }
 
 export async function fetchSoccerTipsPredictions(): Promise<SoccerTipsResult> {
-  const diag: SoccerTipsDiagnostics = { matchBlocks: 0, aiReturned: 0, aiRejected: 0, scoreMismatches: 0, aiError: null };
+  const diag: SoccerTipsDiagnostics = { matchBlocks: 0, aiReturned: 0, aiRejected: 0, scoreMismatches: 0, aiError: null, namesFromAi: 0, namesFromRule: 0 };
 
   let html: string;
   try {
@@ -87,7 +111,7 @@ export async function fetchSoccerTipsPredictions(): Promise<SoccerTipsResult> {
     return { textLength: null, predictions: [], diagnostics: diag, error: String(err), sampleBlocks: [] };
   }
 
-  const text = stripHtml(html);
+  const text = stripHtmlLines(html);
   const blocks = extractBlocks(text);
   diag.matchBlocks = blocks.length;
 
@@ -104,19 +128,26 @@ export async function fetchSoccerTipsPredictions(): Promise<SoccerTipsResult> {
     checkSource: checkMap,
     allowedIds: new Set(blocks.map((b) => String(b.index))),
     maxOutputTokens: 16000,
+    timeoutMs: 20000, // the rule-based split below is the fallback, so do not wait long on Gemini
   }));
   diag.aiReturned = ai.returned;
   diag.aiRejected = ai.rejected;
   diag.aiError = ai.error;
 
+  // Gemini's names when they validated; otherwise the rule-based split. The score is always the regex one (exact).
+  const aiByIndex = new Map(ai.rows.filter((r) => r.id !== null).map((r) => [Number(r.id), r]));
   const predictions: SoccerTipsPrediction[] = [];
-  for (const a of ai.rows) {
-    const b = blocks[Number(a.id)];
-    if (!b) continue;
-    if (a.homeScore !== b.homeScore || a.awayScore !== b.awayScore) diag.scoreMismatches++;
-    predictions.push({ homeTeam: a.homeTeam, awayTeam: a.awayTeam, predictedScore: { home: b.homeScore, away: b.awayScore } }); // regex score is exact
+  for (const b of blocks) {
+    const a = aiByIndex.get(b.index);
+    if (a && (a.homeScore !== b.homeScore || a.awayScore !== b.awayScore)) diag.scoreMismatches++;
+    const home = a ? a.homeTeam : b.ruleHome;
+    const away = a ? a.awayTeam : b.ruleAway;
+    if (!home || !away) continue;
+    if (a) diag.namesFromAi++;
+    else diag.namesFromRule++;
+    predictions.push({ homeTeam: home, awayTeam: away, predictedScore: { home: b.homeScore, away: b.awayScore } });
   }
 
-  if (predictions.length === 0) console.error('[soccertips] parsed 0 predictions -- check GEMINI_API_KEY and the page layout');
+  if (predictions.length === 0) console.error('[soccertips] parsed 0 predictions -- page layout may have changed');
   return { textLength: text.length, predictions, diagnostics: diag, error: null, sampleBlocks: blocks.slice(0, 6).map(line) };
 }

@@ -13,7 +13,8 @@
 // Cost note: the model has a very large context window, so a whole day's page fits in one request.
 // Large row lists are split into chunks that run in parallel, to keep each call (and its output) short.
 
-const GEMINI_MODEL = 'gemini-3.5-flash';
+// Same model the rest of the app uses; set GEMINI_EXTRACT_MODEL on Vercel to try a lighter/faster one for these parsing jobs.
+const GEMINI_MODEL = process.env.GEMINI_EXTRACT_MODEL || 'gemini-3.5-flash';
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 export interface AiMatchRow {

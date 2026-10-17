@@ -182,6 +182,8 @@ export default async function ScrapeStatusPage({ searchParams }: { searchParams:
               ['AI returned', st.diagnostics.aiReturned],
               ['AI rejected', st.diagnostics.aiRejected],
               ['AI/regex score mismatch', st.diagnostics.scoreMismatches],
+              ['names from AI', st.diagnostics.namesFromAi],
+              ['names from rule (no AI)', st.diagnostics.namesFromRule],
               ['AI error', st.diagnostics.aiError],
             ]}
           />

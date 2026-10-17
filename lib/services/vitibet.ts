@@ -148,6 +148,7 @@ export async function fetchVitibetPredictions(): Promise<VitibetResult> {
     checkSource: checkMap,
     allowedIds: new Set(scored.map((r) => r.fixtureId)),
     maxOutputTokens: 32000,
+    timeoutMs: 25000, // the regex parser already covers every row, so do not wait long on Gemini
   }));
   diag.aiReturned = ai.returned;
   diag.aiRejected = ai.rejected;
