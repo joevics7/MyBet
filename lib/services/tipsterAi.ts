@@ -103,19 +103,17 @@ const RESPONSE_SCHEMA = {
   },
 };
 
-export async function geminiExtractMatches(opts: ExtractOptions): Promise<AiExtractResult> {
+// One Gemini JSON call with the shared pacing, retries (503/429/500) and a single overall deadline.
+// Used by the score extractor below and by the team-name registry (teamRegistry.ts).
+export async function callGeminiJson(opts: {
+  source: string; // for log messages only
+  prompt: string;
+  schema: Record<string, unknown>;
+  maxOutputTokens?: number;
+  timeoutMs?: number;
+}): Promise<{ json: unknown | null; error: string | null }> {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return { rows: [], returned: 0, rejected: 0, error: 'GEMINI_API_KEY is not set' };
-
-  const prompt =
-    `You clean up scraped football prediction pages. ${opts.instructions}\n\n` +
-    `Rules:\n` +
-    `- Return one object per match that has a predicted final score. Skip matches that have no predicted score.\n` +
-    `- Copy team names EXACTLY as written in the input (same spelling, accents and punctuation). ` +
-    `Never translate, shorten, expand or correct a name. Never invent a match.\n` +
-    `- home_score is the home team's predicted goals, away_score the away team's.\n` +
-    `- If the input line has an id, return it unchanged in "id". Otherwise omit "id".\n` +
-    `- Output JSON only.\n\nINPUT:\n${opts.input}`;
+  if (!apiKey) return { json: null, error: 'GEMINI_API_KEY is not set' };
 
   await acquireGeminiSlot(); // waiting for a slot does not count against this call's deadline
 
@@ -123,12 +121,12 @@ export async function geminiExtractMatches(opts: ExtractOptions): Promise<AiExtr
   // those) with a short pause, inside one overall deadline so a slow day can never run past the caller's limit.
   const deadline = Date.now() + (opts.timeoutMs ?? 40000);
   const body = JSON.stringify({
-    contents: [{ parts: [{ text: prompt }] }],
+    contents: [{ parts: [{ text: opts.prompt }] }],
     generationConfig: {
       temperature: 0,
       maxOutputTokens: opts.maxOutputTokens ?? 32000,
       responseMimeType: 'application/json',
-      responseSchema: RESPONSE_SCHEMA,
+      responseSchema: opts.schema,
     },
   });
 
@@ -146,7 +144,7 @@ export async function geminiExtractMatches(opts: ExtractOptions): Promise<AiExtr
       });
     } catch (err) {
       console.error(`[tipsterAi:${opts.source}] request threw:`, err);
-      return { rows: [], returned: 0, rejected: 0, error: `request failed (attempt ${attempt}): ${String(err)}` };
+      return { json: null, error: `request failed (attempt ${attempt}): ${String(err)}` };
     }
     if (res.ok) break;
     const errBody = (await res.text()).slice(0, 200);
@@ -158,19 +156,39 @@ export async function geminiExtractMatches(opts: ExtractOptions): Promise<AiExtr
     await new Promise((r) => setTimeout(r, 1500 * attempt));
   }
 
-  if (!res) return { rows: [], returned: 0, rejected: 0, error: lastError };
+  if (!res) return { json: null, error: lastError };
 
-  let parsed: unknown;
   try {
     const json = await res.json();
     const parts: { text?: string }[] = json?.candidates?.[0]?.content?.parts ?? [];
     const text = parts.map((p) => p.text ?? '').join('').replace(/```json|```/g, '').trim();
-    parsed = JSON.parse(text);
+    return { json: JSON.parse(text), error: null };
   } catch (err) {
     console.error(`[tipsterAi:${opts.source}] bad JSON back:`, err);
-    return { rows: [], returned: 0, rejected: 0, error: 'Gemini returned unparseable JSON (output may have been cut off)' };
+    return { json: null, error: 'Gemini returned unparseable JSON (output may have been cut off)' };
   }
+}
 
+export async function geminiExtractMatches(opts: ExtractOptions): Promise<AiExtractResult> {
+  const prompt =
+    `You clean up scraped football prediction pages. ${opts.instructions}\n\n` +
+    `Rules:\n` +
+    `- Return one object per match that has a predicted final score. Skip matches that have no predicted score.\n` +
+    `- Copy team names EXACTLY as written in the input (same spelling, accents and punctuation). ` +
+    `Never translate, shorten, expand or correct a name. Never invent a match.\n` +
+    `- home_score is the home team's predicted goals, away_score the away team's.\n` +
+    `- If the input line has an id, return it unchanged in "id". Otherwise omit "id".\n` +
+    `- Output JSON only.\n\nINPUT:\n${opts.input}`;
+
+  const call = await callGeminiJson({
+    source: opts.source,
+    prompt,
+    schema: RESPONSE_SCHEMA,
+    maxOutputTokens: opts.maxOutputTokens,
+    timeoutMs: opts.timeoutMs,
+  });
+  if (call.error) return { rows: [], returned: 0, rejected: 0, error: call.error };
+  const parsed = call.json;
   if (!Array.isArray(parsed)) return { rows: [], returned: 0, rejected: 0, error: 'Gemini returned JSON that is not a list' };
 
   const globalCheck = typeof opts.checkSource === 'string' ? normalizeForCheck(opts.checkSource) : null;

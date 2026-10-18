@@ -94,18 +94,59 @@ function tokenSimilar(x: string, y: string): boolean {
 
 export const PER_TEAM_THRESHOLD = 0.6;
 
+// ---------------------------------------------------------------- team registry (alias lookup)
+//
+// The registry maps every spelling we have ever seen for a team ("Inter", "Inter Milan", "Internazionale",
+// a betting platform's "FC Internazionale Milano") to ONE team id. It is built by teamRegistry.ts
+// (AI + deterministic learning, stored in Supabase) and passed in here read-only. Matching rules:
+//   both names known, same team      -> 1.0   (exact, however differently spelled)
+//   both names known, different team -> 0     (strong evidence: two DIFFERENT known clubs)
+//   one name known                   -> best fuzzy score against that team's known spellings
+//   neither known                    -> plain fuzzy matching, as before
+export interface TeamRegistry {
+  idByKey: Map<string, string>; // normalised spelling -> team id
+  canonicalById: Map<string, string>; // team id -> canonical (display) name
+  variantsById: Map<string, string[]>; // team id -> every known spelling, canonical included
+}
+
+export const teamKey = (name: string): string => nameTokens(name).join(' ');
+
+export function resolveTeam(registry: TeamRegistry, name: string): string | null {
+  return registry.idByKey.get(teamKey(name)) ?? null;
+}
+
+export function teamSimilarity(a: string, b: string, registry?: TeamRegistry): number {
+  if (registry) {
+    const ia = resolveTeam(registry, a);
+    const ib = resolveTeam(registry, b);
+    if (ia && ib) return ia === ib ? 1 : 0;
+    const known = ia ?? ib;
+    if (known) {
+      const other = ia ? b : a;
+      const spellings = registry.variantsById.get(known) ?? [];
+      return spellings.reduce((best, v) => Math.max(best, nameSimilarity(other, v)), 0);
+    }
+  }
+  return nameSimilarity(a, b);
+}
+
 export interface NamedFixture {
   homeTeam: string;
   awayTeam: string;
 }
 
 // Best fixture in `items` for the given names, or null. Ties go to the higher combined score.
-export function findByNames<T extends NamedFixture>(items: T[], homeTeam: string, awayTeam: string): { item: T; score: number } | null {
+export function findByNames<T extends NamedFixture>(
+  items: T[],
+  homeTeam: string,
+  awayTeam: string,
+  registry?: TeamRegistry,
+): { item: T; score: number } | null {
   let best: { item: T; score: number } | null = null;
   for (const item of items) {
-    const h = nameSimilarity(homeTeam, item.homeTeam);
+    const h = teamSimilarity(homeTeam, item.homeTeam, registry);
     if (h < PER_TEAM_THRESHOLD) continue;
-    const a = nameSimilarity(awayTeam, item.awayTeam);
+    const a = teamSimilarity(awayTeam, item.awayTeam, registry);
     if (a < PER_TEAM_THRESHOLD) continue;
     const score = (h + a) / 2;
     if (!best || score > best.score) best = { item, score };

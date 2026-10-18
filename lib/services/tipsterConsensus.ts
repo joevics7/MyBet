@@ -31,7 +31,8 @@ import type { MarketSelector } from './confidenceEngine';
 import type { StatareaPrediction } from './statarea';
 import type { PredictzPrediction } from './predictz';
 import { getCachedTipsterSources, EMPTY_TIPSTER_SOURCES, type CachedTipsterSources, type CachedScoreSource } from './tipsterCache';
-import { findByNames, nameSimilarity } from './teamNameMatch';
+import { findByNames, teamSimilarity, type TeamRegistry } from './teamNameMatch';
+import { loadTeamRegistry } from './teamRegistry';
 import {
   buildConsensusMarkets,
   expectationFromScore,
@@ -48,7 +49,9 @@ export interface TipsterConsensusResult {
   sources: string[]; // which sites contributed, e.g. ['vitibet', 'predictz']
 }
 
-export type TipsterSourceData = CachedTipsterSources;
+// `teamRegistry` (optional): known spellings per team, learned by /api/cron/team-aliases. When present, names are
+// matched through it first; when absent or empty, matching is plain fuzzy exactly as before.
+export type TipsterSourceData = CachedTipsterSources & { teamRegistry?: TeamRegistry };
 
 // Call ONCE per decode request (or per Predictor batch run), before
 // scoring any individual selections -- pass every DISTINCT kickoff date
@@ -62,7 +65,8 @@ export async function fetchTipsterSources(kickoffDates: string[] = []): Promise<
   const uniqueDates = Array.from(new Set(kickoffDates.filter(Boolean)));
   if (uniqueDates.length === 0) return { ...EMPTY_TIPSTER_SOURCES };
 
-  return getCachedTipsterSources(uniqueDates);
+  const [cached, teamRegistry] = await Promise.all([getCachedTipsterSources(uniqueDates), loadTeamRegistry()]);
+  return { ...cached, teamRegistry };
 }
 
 export interface SourceMatch {
@@ -84,11 +88,12 @@ export function collectExpectations(
   const expectations: SourceExpectation[] = [];
   const matches: SourceMatch[] = [];
   const kickoffDate = kickoffAt ? kickoffAt.slice(0, 10) : null;
+  const reg = sources.teamRegistry;
   const onDate = <T extends { matchDate?: string; date?: string }>(items: T[]) =>
     kickoffDate ? items.filter((i) => !(i.matchDate ?? i.date) || (i.matchDate ?? i.date) === kickoffDate) : items;
 
   // Statarea -> percentages, fitted to expected goals
-  const sa = findByNames<StatareaPrediction>(onDate(sources.statarea), homeTeam, awayTeam)?.item;
+  const sa = findByNames<StatareaPrediction>(onDate(sources.statarea), homeTeam, awayTeam, reg)?.item;
   if (sa) {
     const e = expectationFromStatarea(sa);
     if (e) {
@@ -98,7 +103,7 @@ export function collectExpectations(
   }
 
   // PredictZ -> predicted score
-  const pz = findByNames<PredictzPrediction>(sources.predictz, homeTeam, awayTeam)?.item;
+  const pz = findByNames<PredictzPrediction>(sources.predictz, homeTeam, awayTeam, reg)?.item;
   if (pz?.predictedScore) {
     const e = expectationFromScore('predictz', pz.predictedScore.home, pz.predictedScore.away);
     if (e) {
@@ -112,9 +117,9 @@ export function collectExpectations(
   let vt: CachedScoreSource | undefined;
   if (fixtureId !== undefined && fixtureId !== null) {
     const byId = vtItems.find((v) => v.fixtureId === String(fixtureId));
-    if (byId && nameSimilarity(homeTeam, byId.homeTeam) >= 0.4 && nameSimilarity(awayTeam, byId.awayTeam) >= 0.4) vt = byId;
+    if (byId && teamSimilarity(homeTeam, byId.homeTeam, reg) >= 0.4 && teamSimilarity(awayTeam, byId.awayTeam, reg) >= 0.4) vt = byId;
   }
-  vt = vt ?? findByNames<CachedScoreSource>(vtItems, homeTeam, awayTeam)?.item;
+  vt = vt ?? findByNames<CachedScoreSource>(vtItems, homeTeam, awayTeam, reg)?.item;
   if (vt) {
     const e = expectationFromScore('vitibet', vt.predictedScore.home, vt.predictedScore.away);
     if (e) {
@@ -124,7 +129,7 @@ export function collectExpectations(
   }
 
   // SoccerTips -> predicted score
-  const st = findByNames<CachedScoreSource>(onDate(sources.soccertips), homeTeam, awayTeam)?.item;
+  const st = findByNames<CachedScoreSource>(onDate(sources.soccertips), homeTeam, awayTeam, reg)?.item;
   if (st) {
     const e = expectationFromScore('soccertips', st.predictedScore.home, st.predictedScore.away);
     if (e) {
