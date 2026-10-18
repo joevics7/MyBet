@@ -3,9 +3,11 @@
 //   Cron, 04:00 UTC, rolling 3-day window) and stored in tipster_predictions.
 //   A decode never fetches those sites itself: it reads the stored rows
 //   (getCachedTipsterSources) and calculates the score from them.
-// - Sources: Statarea and PredictZ are built. Forebet is NOT: forebet.ts only
-//   does a raw fetch, and no parser is written until real fetched content has
-//   been inspected (see predictz.ts history for why).
+// - Sources: Statarea, PredictZ, Vitibet, SoccerTips. (Forebet is NOT built:
+//   forebet.ts only does a raw fetch.) Any 1 to 4 of them can contribute.
+// - The score is NOT an average of per-site percentages any more. Every
+//   source is turned into expected goals, those are averaged, and every market
+//   is derived from that one expected scoreline (see scoreConsensus.ts).
 // - BetMeter Score (our own model) is separate: it uses team form from
 //   API-Football, which is cached for 6 hours.
 
@@ -27,21 +29,26 @@
 
 import type { MarketSelector } from './confidenceEngine';
 import type { StatareaPrediction } from './statarea';
-import { findStatareaMatch } from './statareaMatcher';
 import type { PredictzPrediction } from './predictz';
-import { findPredictzMatch } from './predictzMatcher';
-import { deriveMarketFromScore } from './scoreToMarkets';
-import { getCachedTipsterSources } from './tipsterCache';
+import { getCachedTipsterSources, EMPTY_TIPSTER_SOURCES, type CachedTipsterSources, type CachedScoreSource } from './tipsterCache';
+import { findByNames, nameSimilarity } from './teamNameMatch';
+import {
+  buildConsensusMarkets,
+  expectationFromScore,
+  expectationFromStatarea,
+  selectorProbability,
+  type ConsensusMarkets,
+  type SourceExpectation,
+  type TipsterSourceName,
+} from './scoreConsensus';
+import { probabilityToScore } from './poissonModel';
 
 export interface TipsterConsensusResult {
-  score: number | null; // 0-100, averaged across matched sources; null if none matched
-  sources: string[]; // which sites contributed, e.g. ['statarea']
+  score: number | null; // 0-100 for the selected market, from the averaged expected goals; null if no source matched
+  sources: string[]; // which sites contributed, e.g. ['vitibet', 'predictz']
 }
 
-export interface TipsterSourceData {
-  statarea: StatareaPrediction[];
-  predictz: PredictzPrediction[];
-}
+export type TipsterSourceData = CachedTipsterSources;
 
 // Call ONCE per decode request (or per Predictor batch run), before
 // scoring any individual selections -- pass every DISTINCT kickoff date
@@ -53,34 +60,80 @@ export interface TipsterSourceData {
 // nothing for that date, same as any other "not covered" case.
 export async function fetchTipsterSources(kickoffDates: string[] = []): Promise<TipsterSourceData> {
   const uniqueDates = Array.from(new Set(kickoffDates.filter(Boolean)));
-  if (uniqueDates.length === 0) return { statarea: [], predictz: [] };
+  if (uniqueDates.length === 0) return { ...EMPTY_TIPSTER_SOURCES };
 
   return getCachedTipsterSources(uniqueDates);
 }
 
-function getStatareaProbability(prediction: StatareaPrediction, market: MarketSelector): number | null {
-  if (market.type === '1X2') {
-    const pct =
-      market.pick === 'home'
-        ? prediction.homeWinPercent
-        : market.pick === 'draw'
-          ? prediction.drawPercent
-          : prediction.awayWinPercent;
-    return pct / 100;
+export interface SourceMatch {
+  source: TipsterSourceName;
+  theirHome: string; // how that site spells the teams, for transparency/debugging
+  theirAway: string;
+}
+
+// Finds this fixture in each source and turns each hit into an expectation. No I/O.
+// `fixtureId` (optional, API-Football's id) lets Vitibet be matched directly -- but ONLY when the team names
+// also agree reasonably, because "Vitibet's ids are API-Football ids" is an observation, not a guarantee.
+export function collectExpectations(
+  homeTeam: string,
+  awayTeam: string,
+  kickoffAt: string | null,
+  sources: TipsterSourceData,
+  fixtureId?: string | number | null,
+): { expectations: SourceExpectation[]; matches: SourceMatch[] } {
+  const expectations: SourceExpectation[] = [];
+  const matches: SourceMatch[] = [];
+  const kickoffDate = kickoffAt ? kickoffAt.slice(0, 10) : null;
+  const onDate = <T extends { matchDate?: string; date?: string }>(items: T[]) =>
+    kickoffDate ? items.filter((i) => !(i.matchDate ?? i.date) || (i.matchDate ?? i.date) === kickoffDate) : items;
+
+  // Statarea -> percentages, fitted to expected goals
+  const sa = findByNames<StatareaPrediction>(onDate(sources.statarea), homeTeam, awayTeam)?.item;
+  if (sa) {
+    const e = expectationFromStatarea(sa);
+    if (e) {
+      expectations.push(e);
+      matches.push({ source: 'statarea', theirHome: sa.homeTeam, theirAway: sa.awayTeam });
+    }
   }
-  if (market.type === 'BTTS') {
-    return (market.pick === 'yes' ? prediction.bttsYesPercent : prediction.bttsNoPercent) / 100;
+
+  // PredictZ -> predicted score
+  const pz = findByNames<PredictzPrediction>(sources.predictz, homeTeam, awayTeam)?.item;
+  if (pz?.predictedScore) {
+    const e = expectationFromScore('predictz', pz.predictedScore.home, pz.predictedScore.away);
+    if (e) {
+      expectations.push(e);
+      matches.push({ source: 'predictz', theirHome: pz.homeTeam, theirAway: pz.awayTeam });
+    }
   }
-  const overPct =
-    market.line === 1.5
-      ? prediction.over15Percent
-      : market.line === 2.5
-        ? prediction.over25Percent
-        : market.line === 3.5
-          ? prediction.over35Percent
-          : null;
-  if (overPct === null) return null;
-  return (market.pick === 'over' ? overPct : 100 - overPct) / 100;
+
+  // Vitibet -> predicted score; fixture id first (when names agree), then names
+  const vtItems = onDate(sources.vitibet);
+  let vt: CachedScoreSource | undefined;
+  if (fixtureId !== undefined && fixtureId !== null) {
+    const byId = vtItems.find((v) => v.fixtureId === String(fixtureId));
+    if (byId && nameSimilarity(homeTeam, byId.homeTeam) >= 0.4 && nameSimilarity(awayTeam, byId.awayTeam) >= 0.4) vt = byId;
+  }
+  vt = vt ?? findByNames<CachedScoreSource>(vtItems, homeTeam, awayTeam)?.item;
+  if (vt) {
+    const e = expectationFromScore('vitibet', vt.predictedScore.home, vt.predictedScore.away);
+    if (e) {
+      expectations.push(e);
+      matches.push({ source: 'vitibet', theirHome: vt.homeTeam, theirAway: vt.awayTeam });
+    }
+  }
+
+  // SoccerTips -> predicted score
+  const st = findByNames<CachedScoreSource>(onDate(sources.soccertips), homeTeam, awayTeam)?.item;
+  if (st) {
+    const e = expectationFromScore('soccertips', st.predictedScore.home, st.predictedScore.away);
+    if (e) {
+      expectations.push(e);
+      matches.push({ source: 'soccertips', theirHome: st.homeTeam, theirAway: st.awayTeam });
+    }
+  }
+
+  return { expectations, matches };
 }
 
 // Cheap, no I/O -- matches a single selection against already-fetched
@@ -92,40 +145,24 @@ export function matchTipsterConsensus(
   kickoffAt: string | null,
   market: MarketSelector,
   sources: TipsterSourceData,
+  fixtureId?: string | number | null,
 ): TipsterConsensusResult {
-  const scores: { source: string; score: number }[] = [];
-  const kickoffDate = kickoffAt ? kickoffAt.slice(0, 10) : null;
+  const { expectations } = collectExpectations(homeTeam, awayTeam, kickoffAt, sources, fixtureId);
+  const probability = selectorProbability(expectations, market);
+  if (probability === null) return { score: null, sources: [] };
+  return { score: probabilityToScore(probability), sources: expectations.map((e) => e.source) };
+}
 
-  const statareaMatch = findStatareaMatch(homeTeam, awayTeam, kickoffDate, sources.statarea);
-  if (statareaMatch) {
-    const probability = getStatareaProbability(statareaMatch, market);
-    if (probability !== null) scores.push({ source: 'statarea', score: Math.round(probability * 100) });
-  }
-
-  const predictzMatch = findPredictzMatch(homeTeam, awayTeam, sources.predictz);
-  if (predictzMatch) {
-    // Prefer real decimal-odds-implied probability for 1X2 (continuous,
-    // richer signal) when Predictz gave odds; this is the one market it
-    // publishes odds for. Falls back to the derived-score 0/1 signal for
-    // BTTS/Over-Under (no odds given for those) or if 1X2 odds are missing.
-    if (market.type === '1X2' && predictzMatch.oddsHome && predictzMatch.oddsDraw && predictzMatch.oddsAway) {
-      const odds =
-        market.pick === 'home' ? predictzMatch.oddsHome : market.pick === 'draw' ? predictzMatch.oddsDraw : predictzMatch.oddsAway;
-      if (odds > 0) {
-        // Decimal-odds implied probability (1/odds) includes the
-        // bookmaker's margin and isn't normalized across all three
-        // outcomes -- a rough signal, not a true probability, but still
-        // meaningfully richer than a binary derived guess.
-        scores.push({ source: 'predictz', score: Math.round((1 / odds) * 100) });
-      }
-    } else if (predictzMatch.predictedScore) {
-      const derived = deriveMarketFromScore(predictzMatch.predictedScore, market);
-      if (derived !== null) scores.push({ source: 'predictz', score: derived * 100 });
-    }
-  }
-
-  if (scores.length === 0) return { score: null, sources: [] };
-
-  const avg = Math.round(scores.reduce((sum, s) => sum + s.score, 0) / scores.length);
-  return { score: avg, sources: scores.map((s) => s.source) };
+// All markets for one fixture (Over/Under 0.5-3.5, GG/NG, 1X2, Double Chance, Odd/Even, Home/Away team
+// goals, Winning Margin, Win to Nil), from the averaged expected goals of whichever sources have the match.
+export function getTipsterMarkets(
+  homeTeam: string,
+  awayTeam: string,
+  kickoffAt: string | null,
+  sources: TipsterSourceData,
+  fixtureId?: string | number | null,
+): { markets: ConsensusMarkets; matches: SourceMatch[] } | null {
+  const { expectations, matches } = collectExpectations(homeTeam, awayTeam, kickoffAt, sources, fixtureId);
+  const markets = buildConsensusMarkets(expectations);
+  return markets ? { markets, matches } : null;
 }

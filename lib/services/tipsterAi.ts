@@ -32,6 +32,35 @@ export interface AiExtractResult {
   error: string | null; // set when the call itself failed (no key, HTTP error, bad JSON, timeout)
 }
 
+// Shared pacing for every Gemini call in this process (all sources, page and cron): the first 3 calls of a
+// burst start immediately, each further call waits its turn, starting 2s after the previous one. Gemini
+// answers 503 "high demand" less often when it is not hit with everything at once. A burst ends after 10s
+// of quiet. The slot is reserved synchronously, so concurrent callers cannot race into the same slot.
+const IMMEDIATE_CALLS = 3;
+const SPACING_MS = 2000;
+const BURST_RESET_MS = 10000;
+let burstCount = 0;
+let lastStartAt = 0;
+let nextSlotAt = 0;
+
+async function acquireGeminiSlot(): Promise<void> {
+  const now = Date.now();
+  if (now - lastStartAt > BURST_RESET_MS) {
+    burstCount = 0;
+    nextSlotAt = 0;
+  }
+  burstCount++;
+  if (burstCount <= IMMEDIATE_CALLS) {
+    lastStartAt = now;
+    nextSlotAt = now + SPACING_MS;
+    return;
+  }
+  const start = Math.max(now, nextSlotAt);
+  nextSlotAt = start + SPACING_MS;
+  lastStartAt = start;
+  if (start > now) await new Promise((r) => setTimeout(r, start - now));
+}
+
 export function normalizeForCheck(s: string): string {
   return s
     .toLowerCase()
@@ -87,6 +116,8 @@ export async function geminiExtractMatches(opts: ExtractOptions): Promise<AiExtr
     `- home_score is the home team's predicted goals, away_score the away team's.\n` +
     `- If the input line has an id, return it unchanged in "id". Otherwise omit "id".\n` +
     `- Output JSON only.\n\nINPUT:\n${opts.input}`;
+
+  await acquireGeminiSlot(); // waiting for a slot does not count against this call's deadline
 
   // Gemini regularly answers 503 ("high demand") or 429 for a few seconds at a time. Retry those (and only
   // those) with a short pause, inside one overall deadline so a slow day can never run past the caller's limit.

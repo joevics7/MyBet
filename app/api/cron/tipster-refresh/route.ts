@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
 import { fetchStatareaPredictions } from '@/lib/services/statarea';
 import { fetchPredictzPredictions } from '@/lib/services/predictz';
+import { fetchVitibetPredictions } from '@/lib/services/vitibet';
+import { fetchSoccerTipsPredictions } from '@/lib/services/soccertips';
 import { upsertTipsterPredictions } from '@/lib/services/tipsterCache';
 
 export const runtime = 'nodejs';
@@ -46,7 +48,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Normal run (cron-job.org): it drops a request after ~30s and this job scrapes 6 pages, so answer
+  // Normal run (cron-job.org): it drops a request after ~30s and this job scrapes 8 pages, so answer
   // right away and finish in the background. Results/errors go to the function logs ("[tipster-refresh cron] ...").
   waitUntil(
     runRefresh()
@@ -136,7 +138,63 @@ async function runRefresh(): Promise<NextResponse> {
   };
   const predictzChain = () => Promise.all([0, 1, 2].map(predictzDay));
 
-  await Promise.all([statareaChain(), predictzChain()]);
+  // Vitibet and SoccerTips only publish TODAY's page, so one fetch each, stored under today's date.
+  // Both are plain HTML (no ZenRows credits). Scores only -- no percentages or odds.
+  const nullPcts = {
+    home_win_pct: null, draw_pct: null, away_win_pct: null,
+    over_15_pct: null, over_25_pct: null, over_35_pct: null,
+    btts_yes_pct: null, btts_no_pct: null,
+    odds_home: null, odds_draw: null, odds_away: null,
+  };
+
+  const vitibetChain = async () => {
+    const date = dateDaysFromNow(0);
+    try {
+      const r = await fetchVitibetPredictions();
+      if (r.error) throw new Error(r.error);
+      await upsertTipsterPredictions(
+        'vitibet',
+        date,
+        r.predictions.map((p) => ({
+          ...nullPcts,
+          fixture_id: p.fixtureId,
+          home_team: p.homeTeam,
+          away_team: p.awayTeam,
+          predicted_home_score: p.predictedScore.home,
+          predicted_away_score: p.predictedScore.away,
+        })),
+      );
+      results[`vitibet-${date}`] = { ok: true, count: r.predictions.length };
+    } catch (err) {
+      console.error('[tipster-refresh cron] vitibet failed for', date, err);
+      results[`vitibet-${date}`] = { ok: false, count: 0, error: String(err) };
+    }
+  };
+
+  const soccertipsChain = async () => {
+    const date = dateDaysFromNow(0);
+    try {
+      const r = await fetchSoccerTipsPredictions();
+      if (r.error) throw new Error(r.error);
+      await upsertTipsterPredictions(
+        'soccertips',
+        date,
+        r.predictions.map((p) => ({
+          ...nullPcts,
+          home_team: p.homeTeam,
+          away_team: p.awayTeam,
+          predicted_home_score: p.predictedScore.home,
+          predicted_away_score: p.predictedScore.away,
+        })),
+      );
+      results[`soccertips-${date}`] = { ok: true, count: r.predictions.length };
+    } catch (err) {
+      console.error('[tipster-refresh cron] soccertips failed for', date, err);
+      results[`soccertips-${date}`] = { ok: false, count: 0, error: String(err) };
+    }
+  };
+
+  await Promise.all([statareaChain(), predictzChain(), vitibetChain(), soccertipsChain()]);
 
   return NextResponse.json({ refreshedAt: new Date().toISOString(), results });
 }

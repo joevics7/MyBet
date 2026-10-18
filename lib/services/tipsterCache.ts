@@ -8,8 +8,11 @@ import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import type { StatareaPrediction } from './statarea';
 import type { PredictzPrediction } from './predictz';
 
+export type TipsterCacheSource = 'statarea' | 'predictz' | 'forebet' | 'vitibet' | 'soccertips';
+
 interface TipsterPredictionRow {
-  source: 'statarea' | 'predictz' | 'forebet';
+  source: TipsterCacheSource;
+  fixture_id?: string | null;
   match_date: string;
   home_team: string;
   away_team: string;
@@ -32,25 +35,41 @@ interface TipsterPredictionRow {
 // daily per date, so stale rows from a previous run for that exact
 // date/source should never linger.
 export async function upsertTipsterPredictions(
-  source: 'statarea' | 'predictz' | 'forebet',
+  source: TipsterCacheSource,
   matchDate: string,
   rows: Omit<TipsterPredictionRow, 'source' | 'match_date'>[],
 ): Promise<void> {
+  // A failed or empty fetch must NOT wipe the last good rows for that date (a ZenRows/Gemini outage would
+  // otherwise leave the day with no tipster data at all). Keeping yesterday's run for the same date is
+  // better than keeping nothing; the next successful run replaces it.
+  if (rows.length === 0) return;
+
   const admin = getSupabaseAdmin();
 
   await admin.from('tipster_predictions').delete().eq('source', source).eq('match_date', matchDate);
-
-  if (rows.length === 0) return; // nothing to insert -- a 0-result day is still a successful "refresh", just empty
 
   await admin.from('tipster_predictions').insert(
     rows.map((r) => ({ source, match_date: matchDate, ...r })),
   );
 }
 
+// A source that publishes a predicted score per match (Vitibet, SoccerTips).
+export interface CachedScoreSource {
+  matchDate: string;
+  fixtureId: string | null;
+  homeTeam: string;
+  awayTeam: string;
+  predictedScore: { home: number; away: number };
+}
+
 export interface CachedTipsterSources {
   statarea: StatareaPrediction[];
   predictz: PredictzPrediction[];
+  vitibet: CachedScoreSource[];
+  soccertips: CachedScoreSource[];
 }
+
+export const EMPTY_TIPSTER_SOURCES: CachedTipsterSources = { statarea: [], predictz: [], vitibet: [], soccertips: [] };
 
 // Reads whatever is cached for the given dates -- does NOT live-fetch as
 // a fallback. If the cron hasn't run for a date yet, that date simply has
@@ -60,20 +79,28 @@ export interface CachedTipsterSources {
 // avoid.
 export async function getCachedTipsterSources(dates: string[]): Promise<CachedTipsterSources> {
   const uniqueDates = Array.from(new Set(dates.filter(Boolean)));
-  if (uniqueDates.length === 0) return { statarea: [], predictz: [] };
+  if (uniqueDates.length === 0) return { ...EMPTY_TIPSTER_SOURCES };
 
   const admin = getSupabaseAdmin();
-  const { data, error } = await admin
-    .from('tipster_predictions')
-    .select('*')
-    .in('match_date', uniqueDates);
 
-  if (error || !data) {
-    console.error('[tipsterCache] read failed:', error);
-    return { statarea: [], predictz: [] };
+  // Supabase returns at most 1000 rows per request by default, and one day alone is ~1100 rows across the
+  // four sources (Vitibet ~600, Statarea ~360). Page through so nothing is silently cut off.
+  const PAGE = 1000;
+  const rows: TipsterPredictionRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await admin
+      .from('tipster_predictions')
+      .select('*')
+      .in('match_date', uniqueDates)
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error || !data) {
+      console.error('[tipsterCache] read failed:', error);
+      return { ...EMPTY_TIPSTER_SOURCES };
+    }
+    rows.push(...(data as TipsterPredictionRow[]));
+    if (data.length < PAGE) break;
   }
-
-  const rows = data as TipsterPredictionRow[];
 
   const statarea: StatareaPrediction[] = rows
     .filter((r) => r.source === 'statarea')
@@ -110,5 +137,16 @@ export async function getCachedTipsterSources(dates: string[]): Promise<CachedTi
       oddsAway: r.odds_away,
     }));
 
-  return { statarea, predictz };
+  const scoreSource = (source: TipsterCacheSource): CachedScoreSource[] =>
+    rows
+      .filter((r) => r.source === source && r.predicted_home_score !== null && r.predicted_away_score !== null)
+      .map((r) => ({
+        matchDate: r.match_date,
+        fixtureId: r.fixture_id ?? null,
+        homeTeam: r.home_team,
+        awayTeam: r.away_team,
+        predictedScore: { home: r.predicted_home_score as number, away: r.predicted_away_score as number },
+      }));
+
+  return { statarea, predictz, vitibet: scoreSource('vitibet'), soccertips: scoreSource('soccertips') };
 }

@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
     tipsterSourceData = await fetchTipsterSources(kickoffDates);
   } catch (err) {
     console.error('[decode] fetchTipsterSources failed entirely:', err);
-    tipsterSourceData = { statarea: [], predictz: [] };
+    tipsterSourceData = { statarea: [], predictz: [], vitibet: [], soccertips: [] };
   }
 
   // Score each selection with TWO independent scores, never combined:
