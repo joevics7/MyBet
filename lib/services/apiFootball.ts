@@ -104,11 +104,14 @@ const formCache = new Map<number, { at: number; data: TeamMatchResult[] }>();
 const FORM_TTL_MS = 6 * 60 * 60 * 1000;
 
 // Mirrors footballData.fetchTeamRecentForm.
-export async function fetchTeamRecentForm(teamId: number, limit = 10): Promise<TeamMatchResult[]> {
+export async function fetchTeamRecentForm(teamId: number, limit = 10, historyOnly = false): Promise<TeamMatchResult[]> {
   // Preferred: build the form from the stored daily results (no API request). Falls back to the per-team
   // request below only while that history is not ready yet.
   const stored = await lookupForm(teamId, limit);
   if (stored) return stored;
+  // historyOnly (the daily Predictor): the stored history is not ready, so report "no data" instead of spending one
+  // request per team on the 100/day free quota that the Decoder also needs.
+  if (historyOnly) return [];
 
   const hit = formCache.get(teamId);
   if (hit && Date.now() - hit.at < FORM_TTL_MS) return hit.data.slice(0, limit);

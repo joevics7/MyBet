@@ -53,9 +53,10 @@ export interface GeneratedTicket {
 
 const TARGET_BANDS = [1.5, 2, 3, 4, 5];
 const TOLERANCE = 0.15;       // combined odds must land within +/-15% of target
-const MIN_CONFIDENCE = 80;    // a pick must EXCEED this confidence (set 2026-10-15; was 60)
+const MIN_CONFIDENCE = 60;    // a pick needs AT LEAST this confidence (0-100). Was 80 (stricter than the data supports: only 1-3 games a day cleared it)
 const MAX_STRAIGHT_WINS_PER_TICKET = 1; // straight win = 1X2 home/away; capped so tickets are not all outright wins
-const MAX_POOL_SIZE = 40;     // cap search space so this stays fast in a serverless function
+const MAX_POOL_SIZE = 60;     // cap search space so this stays fast in a serverless function
+const PICKS_PER_GAME = 3;     // only a game's best few markets enter the pool, so a handful of games can't crowd out all the others
 const MAX_LEGS = 6;           // a ticket shouldn't need more than this to hit odds 5.0 at reasonable confidence
 
 const gameOf = (c: CandidateSelection) => c.gameKey ?? c.externalEventId;
@@ -126,9 +127,15 @@ function buildTicketForBand(
 
 // `usedGames` is shared between the bookmaker run and the model run so no game appears on two tickets.
 export function generateDailyTickets(candidates: CandidateSelection[], usedGames: Set<string> = new Set()): GeneratedTicket[] {
+  const perGame = new Map<string, number>();
   const pool = candidates
-    .filter((c) => c.score > MIN_CONFIDENCE && !isUnder(c))
+    .filter((c) => c.score >= MIN_CONFIDENCE && !isUnder(c))
     .sort((a, b) => b.score - a.score)
+    .filter((c) => {
+      const n = perGame.get(gameOf(c)) ?? 0;
+      perGame.set(gameOf(c), n + 1);
+      return n < PICKS_PER_GAME;
+    })
     .slice(0, MAX_POOL_SIZE);
 
   const tickets: GeneratedTicket[] = [];

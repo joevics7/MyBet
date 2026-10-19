@@ -11,14 +11,18 @@
 
 import { fetchFamilyFeed, SPORTYBET } from '@/lib/odds/sportybetFeed';
 import type { FeedMatch } from '@/lib/odds/types';
-import { findFixtureByTeamNames, type FixtureProvider } from '@/lib/services/teamMatcher';
+import { findFixtureByTeamNames } from '@/lib/services/teamMatcher';
 import { fetchMatchesByDateRange as fdFetchRange } from '@/lib/services/footballData';
 import { fetchMatchesByDateRange as afFetchRange, isApiFootballConfigured } from '@/lib/services/apiFootball';
-import { computeMatchProbabilities, scoreForMarket, type MarketSelector } from '@/lib/services/confidenceEngine';
+import { scoreForMarket, type MarketSelector } from '@/lib/services/confidenceEngine';
+import { probabilitiesWithFallback } from './probabilities';
+import { loadTeamRegistry } from '@/lib/services/teamRegistry';
+import type { TeamRegistry } from '@/lib/services/teamNameMatch';
 import type { CandidateSelection } from '@/lib/services/predictorSelection';
 
 export const FIXTURE_WINDOW_DAYS = 2;
-export const MAX_GAMES_PER_RUN = 60;
+export const MAX_GAMES_PER_RUN = 150; // form comes from stored history (no API request per team), so many more games can be scanned
+const FD_REQUEST_BUDGET_GAMES = 5; // football-data.org allows 10 requests/min; each game costs 2
 const CONCURRENCY = 4;
 const SCAN_BUDGET_MS = 25000; // both sets scan in parallel; leaves the rest of the 60s for analysis, saving and codes
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -29,12 +33,15 @@ export const CANDIDATE_MARKETS: MarketSelector[] = [
   { type: '1X2', pick: 'draw' },
   { type: '1X2', pick: 'away' },
   { type: 'BTTS', pick: 'yes' },
+  { type: 'BTTS', pick: 'no' },
+  { type: 'OVER_UNDER', pick: 'over', line: 1.5 },
   { type: 'OVER_UNDER', pick: 'over', line: 2.5 },
-  { type: 'OVER_UNDER', pick: 'under', line: 2.5 },
+  { type: 'OVER_UNDER', pick: 'under', line: 2.5 }, // scanned for completeness; Under picks are never published (predictorSelection)
 ];
+const MODEL_LINES = [1.5, 2.5];
 
 export function marketLabelFor(m: MarketSelector): string {
-  return m.type === '1X2' ? `1X2 - ${m.pick}` : m.type === 'BTTS' ? 'BTTS - Yes' : `${m.pick === 'over' ? 'Over' : 'Under'} ${m.line}`;
+  return m.type === '1X2' ? `1X2 - ${m.pick}` : m.type === 'BTTS' ? `BTTS - ${m.pick === 'yes' ? 'Yes' : 'No'}` : `${m.pick === 'over' ? 'Over' : 'Under'} ${m.line}`;
 }
 
 // 1/probability, capped so a near-zero probability can't produce Infinity (the database rejects it).
@@ -43,8 +50,9 @@ const safeOdds = (p: number) => (p > 0.001 ? Math.round((1 / p) * 100) / 100 : 9
 // Real price for a market from a feed match's odds, if the bookmaker has it.
 export function bookPrice(odds: FeedMatch['odds'], m: MarketSelector): number | null {
   if (m.type === '1X2') return odds['1x2']?.[{ home: 0, draw: 1, away: 2 }[m.pick]] ?? null;
-  if (m.type === 'BTTS') return odds.btts?.[0] ?? null;
-  return odds['ou2.5']?.[m.pick === 'over' ? 0 : 1] ?? null;
+  if (m.type === 'BTTS') return odds.btts?.[m.pick === 'yes' ? 0 : 1] ?? null;
+  const key = `ou${m.line}` as 'ou1.5' | 'ou2.5' | 'ou3.5';
+  return odds[key]?.[m.pick === 'over' ? 0 : 1] ?? null;
 }
 
 // Youth/women/reserve sides have thin, unreliable form data: skip them.
@@ -60,6 +68,7 @@ export interface CollectStats {
   failed: number;
   candidates: number;
   budgetHit: boolean;
+  providers?: { apiFootballConfigured: boolean; footballDataConfigured: boolean; fixturesFrom: Record<string, number>; formFrom: Record<string, number>; formFallbacks: number; lastFormProblem?: string };
   note?: string;
 }
 
@@ -67,6 +76,15 @@ export interface Collected {
   candidates: CandidateSelection[];
   stats: CollectStats;
 }
+
+function newProviderStats(): NonNullable<CollectStats['providers']> {
+  return {
+    apiFootballConfigured: isApiFootballConfigured(),
+    footballDataConfigured: !!process.env.FOOTBALL_DATA_API_KEY,
+    fixturesFrom: {}, formFrom: {}, formFallbacks: 0,
+  };
+}
+const bump = (rec: Record<string, number>, key: string) => { rec[key] = (rec[key] ?? 0) + 1; };
 
 async function inPool<T>(items: T[], worker: (item: T) => Promise<void>, deadline: number): Promise<boolean> {
   let next = 0;
@@ -104,15 +122,25 @@ async function fromBookmaker(started: number): Promise<Collected | null> {
     notCovered: 0, insufficientData: 0, failed: 0, candidates: 0, budgetHit: false,
   };
   const candidates: CandidateSelection[] = [];
+  const providers = (stats.providers = newProviderStats());
+  const registry: TeamRegistry | undefined = await loadTeamRegistry().catch(() => undefined);
+  const fdBudget = { left: FD_REQUEST_BUDGET_GAMES * 2 };
 
   stats.budgetHit = await inPool(games.slice(0, MAX_GAMES_PER_RUN * 2), async (g) => {
     if (stats.gamesScanned >= MAX_GAMES_PER_RUN) return;
     try {
-      const fixture = await findFixtureByTeamNames(g.home, g.away, g.kickoff);
+      const fixture = await findFixtureByTeamNames(g.home, g.away, g.kickoff, registry);
       if (!fixture) return void stats.notCovered++;
       stats.gamesScanned++;
-      const out = await computeMatchProbabilities(fixture.homeTeamId, fixture.awayTeamId, [2.5], undefined, fixture.provider as FixtureProvider);
-      if (out.status !== 'ok') return void stats.insufficientData++;
+      bump(providers.fixturesFrom, fixture.provider);
+      const res = await probabilitiesWithFallback(g, fixture, MODEL_LINES, registry, undefined, fdBudget);
+      if (!res.ok) {
+        providers.lastFormProblem = res.message;
+        return void (res.reason === 'error' ? stats.failed++ : stats.insufficientData++);
+      }
+      bump(providers.formFrom, res.usedProvider);
+      if (res.fellBack) providers.formFallbacks++;
+      const out = { data: res.data };
 
       const form = { home: out.data.homeFormString, away: out.data.awayFormString, homeGoalsAvg: out.data.homeGoalsAvg, awayGoalsAvg: out.data.awayGoalsAvg };
       for (const market of CANDIDATE_MARKETS) {
@@ -153,8 +181,21 @@ async function fromBookmaker(started: number): Promise<Collected | null> {
 async function fromFixtures(started: number): Promise<Collected> {
   const dateFrom = new Date().toISOString().slice(0, 10);
   const dateTo = new Date(Date.now() + FIXTURE_WINDOW_DAYS * 86400000).toISOString().slice(0, 10);
-  const useAf = isApiFootballConfigured();
-  const fixtures = await (useAf ? afFetchRange : fdFetchRange)(dateFrom, dateTo);
+  // Both providers, in order: API-Football (wide coverage) first; football-data.org if it fails, is out of quota or returns nothing.
+  const providers = newProviderStats();
+  let useAf = false;
+  let fixtures: Awaited<ReturnType<typeof afFetchRange>> = [];
+  if (providers.apiFootballConfigured) {
+    try {
+      fixtures = await afFetchRange(dateFrom, dateTo);
+      useAf = fixtures.length > 0;
+    } catch (err) {
+      console.error('[predictor] API-Football fixtures failed, trying football-data.org:', err);
+    }
+  }
+  if (!useAf && providers.footballDataConfigured) fixtures = await fdFetchRange(dateFrom, dateTo);
+  const registry: TeamRegistry | undefined = await loadTeamRegistry().catch(() => undefined);
+  const fdBudget = { left: FD_REQUEST_BUDGET_GAMES * 2 };
   const scheduled = Array.from(new Map(fixtures.map((f) => [f.id, f])).values())
     .filter((f) => (f.status === 'SCHEDULED' || f.status === 'TIMED') && !LOW_SIGNAL.test(`${f.homeTeam.name} ${f.awayTeam.name} ${f.competition.name}`))
     .slice(0, MAX_GAMES_PER_RUN);
@@ -163,14 +204,26 @@ async function fromFixtures(started: number): Promise<Collected> {
     mode: 'model', source: useAf ? 'API-Football fixtures' : 'football-data.org fixtures', gamesAvailable: scheduled.length,
     gamesScanned: 0, notCovered: 0, insufficientData: 0, failed: 0, candidates: 0, budgetHit: false,
     note: 'Odds are model-implied (1 / probability), not bookmaker prices.',
+    providers,
   };
+  providers.fixturesFrom[useAf ? 'apifootball' : 'footballdata'] = scheduled.length;
   const candidates: CandidateSelection[] = [];
 
   stats.budgetHit = await inPool(scheduled, async (f) => {
     try {
-      const out = await computeMatchProbabilities(f.homeTeam.id, f.awayTeam.id, [2.5], undefined, useAf ? 'apifootball' : 'footballdata');
-      if (out.status !== 'ok') return void stats.insufficientData++;
+      const res = await probabilitiesWithFallback(
+        { home: f.homeTeam.name, away: f.awayTeam.name, kickoff: f.utcDate },
+        { provider: useAf ? 'apifootball' : 'footballdata', homeTeamId: f.homeTeam.id, awayTeamId: f.awayTeam.id },
+        MODEL_LINES, registry, undefined, fdBudget,
+      );
+      if (!res.ok) {
+        providers.lastFormProblem = res.message;
+        return void (res.reason === 'error' ? stats.failed++ : stats.insufficientData++);
+      }
       stats.gamesScanned++;
+      bump(providers.formFrom, res.usedProvider);
+      if (res.fellBack) providers.formFallbacks++;
+      const out = { data: res.data };
       const form = { home: out.data.homeFormString, away: out.data.awayFormString, homeGoalsAvg: out.data.homeGoalsAvg, awayGoalsAvg: out.data.awayGoalsAvg };
       for (const market of CANDIDATE_MARKETS) {
         const scored = scoreForMarket(market, out.data.probs);

@@ -17,7 +17,7 @@
 //   MSport, Betway where every pick exists) and attached to each ticket, so a
 //   timeout can never lose the tickets themselves.
 // - Re-running the same day replaces that day's tickets.
-// - Ticket rules (lib/services/predictorSelection.ts): every pick must exceed 80 confidence; no Under-goals
+// - Ticket rules (lib/services/predictorSelection.ts): every pick must have at least 60 confidence; no Under-goals
 //   picks; at most 1 straight win (1X2 home/away) per ticket; each game appears on only ONE ticket (across both predictors).
 //   On a thin day this means fewer than 5 tickets are published (a band with no valid combination is skipped).
 import { NextRequest, NextResponse } from 'next/server';

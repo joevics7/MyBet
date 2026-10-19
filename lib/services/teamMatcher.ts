@@ -126,6 +126,7 @@ export async function findFixtureByTeamNames(
   awayTeamName: string,
   kickoffAt: string | null,
   registry?: TeamRegistry, // optional: spellings learned from tipster sites and betting platforms (teamRegistry.ts)
+  onlyProvider?: FixtureProvider, // look in this provider only (used to find the same game in the OTHER provider)
 ): Promise<MatchedFixture | null> {
   if (!kickoffAt) return null;
 
@@ -154,8 +155,8 @@ export async function findFixtureByTeamNames(
   // API-Football first (wide coverage), then football-data.org as a fallback
   // (e.g. API-Football quota exhausted, or fixture missing there).
   const providers: { name: FixtureProvider; fetchRange: typeof fdFetchRange }[] = [];
-  if (isApiFootballConfigured()) providers.push({ name: 'apifootball', fetchRange: afFetchRange });
-  if (process.env.FOOTBALL_DATA_API_KEY) providers.push({ name: 'footballdata', fetchRange: fdFetchRange });
+  if (isApiFootballConfigured() && onlyProvider !== 'footballdata') providers.push({ name: 'apifootball', fetchRange: afFetchRange });
+  if (process.env.FOOTBALL_DATA_API_KEY && onlyProvider !== 'apifootball') providers.push({ name: 'footballdata', fetchRange: fdFetchRange });
 
   for (const provider of providers) {
     let candidates: FdMatch[];

@@ -125,8 +125,9 @@ export async function computeMatchProbabilities(
   overUnderLines: number[] = [1.5, 2.5, 3.5],
   leagueAvg?: LeagueAverages,
   provider: FixtureProvider = 'footballdata',
+  opts: { historyOnly?: boolean } = {},
 ): Promise<MatchProbabilitiesOutcome> {
-  const fetchForm = provider === 'apifootball' ? afForm : fdForm;
+  const fetchForm = provider === 'apifootball' ? (id: number) => afForm(id, 10, !!opts.historyOnly) : fdForm;
   const [homeForm, awayForm] = await Promise.all([fetchForm(homeTeamId), fetchForm(awayTeamId)]);
 
   if (homeForm.length < MIN_SAMPLE_SIZE || awayForm.length < MIN_SAMPLE_SIZE) {
