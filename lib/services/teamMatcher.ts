@@ -21,6 +21,7 @@
 
 import { fetchMatchesByDateRange as fdFetchRange, type FdMatch } from './footballData';
 import { fetchMatchesByDateRange as afFetchRange, isApiFootballConfigured } from './apiFootball';
+import { resolveTeam, teamSimilarity, type TeamRegistry } from './teamNameMatch';
 
 // Team IDs are NOT shared between providers, so a match always carries the
 // provider it came from, and form must be fetched from that same provider.
@@ -124,6 +125,7 @@ export async function findFixtureByTeamNames(
   homeTeamName: string,
   awayTeamName: string,
   kickoffAt: string | null,
+  registry?: TeamRegistry, // optional: spellings learned from tipster sites and betting platforms (teamRegistry.ts)
 ): Promise<MatchedFixture | null> {
   if (!kickoffAt) return null;
 
@@ -135,8 +137,19 @@ export async function findFixtureByTeamNames(
   const dateFrom = new Date(kickoffDate.getTime() - 86400000).toISOString().slice(0, 10);
   const dateTo = new Date(kickoffDate.getTime() + 86400000).toISOString().slice(0, 10);
 
-  const targetHome = normalizeTeamName(homeTeamName);
-  const targetAway = normalizeTeamName(awayTeamName);
+  // Name score: plain fuzzy as before, upgraded by the registry when it knows either spelling.
+  //   both spellings known, same team      -> 1   (e.g. platform "Spurs" vs provider "Tottenham Hotspur")
+  //   both known, two DIFFERENT teams      -> 0   (veto)
+  //   one known                            -> the better of plain fuzzy and fuzzy against that team's known spellings
+  const nameScore = (input: string, provider: string): number => {
+    const plain = similarity(normalizeTeamName(input), normalizeTeamName(provider));
+    if (!registry) return plain;
+    const a = resolveTeam(registry, input);
+    const b = resolveTeam(registry, provider);
+    if (a && b) return a === b ? 1 : 0;
+    if (a || b) return Math.max(plain, teamSimilarity(input, provider, registry));
+    return plain;
+  };
 
   // API-Football first (wide coverage), then football-data.org as a fallback
   // (e.g. API-Football quota exhausted, or fixture missing there).
@@ -155,8 +168,8 @@ export async function findFixtureByTeamNames(
 
     let best: { match: FdMatch; score: number } | null = null;
     for (const match of candidates) {
-      const homeScore = similarity(targetHome, normalizeTeamName(match.homeTeam.name));
-      const awayScore = similarity(targetAway, normalizeTeamName(match.awayTeam.name));
+      const homeScore = nameScore(homeTeamName, match.homeTeam.name);
+      const awayScore = nameScore(awayTeamName, match.awayTeam.name);
       if (homeScore < PER_TEAM_THRESHOLD || awayScore < PER_TEAM_THRESHOLD) continue;
       const combined = (homeScore + awayScore) / 2;
       if (!best || combined > best.score) best = { match, score: combined };

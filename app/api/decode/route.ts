@@ -143,6 +143,7 @@ export async function POST(req: NextRequest) {
           awayTeamName: sel.awayTeam,
           kickoffAt: sel.kickoffAt,
           market: parsedMarket,
+          registry: tipsterSourceData.teamRegistry,
         });
         if (ownOutcome.status === 'ok') score = ownOutcome.result.score;
       } catch (err) {
@@ -166,7 +167,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Learn this platform's team spellings in the background (does not delay the response).
-  if (tipsterSourceData.vitibet?.length) {
+  if (tipsterSourceData.vitibet?.length || tipsterSourceData.statarea?.length) {
     waitUntil(
       (async () => {
         const registry = tipsterSourceData.teamRegistry ?? (await loadTeamRegistry());

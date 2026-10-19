@@ -3,11 +3,12 @@
 // (teamRegistry.ts), so the same safeguards apply: Vitibet is the base, Gemini only picks among candidate
 // fixtures and must be "high" confidence, and ambiguous one-word names are never saved globally.
 //
-// Runs in the background after a decode (waitUntil) so it never slows the response. It only has something to
-// learn from when the match is in the cached Vitibet list for that date (today, as refreshed by the cron).
+// Runs in the background after a decode (waitUntil) so it never slows the response. Today's matches are
+// learned against the Vitibet list; matches on later days (Statarea's 3-day window) are only attached to teams the
+// registry already knows.
 
 import { planAliasLearning, resolveWithAi, saveLearnedVariants, dedupeLearned, type LearnedVariant, type SourceRow } from './teamRegistry';
-import type { TeamRegistry } from './teamNameMatch';
+import { resolveTeam, type TeamRegistry } from './teamNameMatch';
 import type { CachedTipsterSources } from './tipsterCache';
 
 export interface SlipLeg {
@@ -27,9 +28,17 @@ export async function learnPlatformNames(platformSlug: string, legs: SlipLeg[], 
 
   const all: LearnedVariant[] = [];
   for (const [date, dayLegs] of Array.from(byDate.entries())) {
-    const spine = sources.vitibet
+    let spine = sources.vitibet
       .filter((v) => v.matchDate === date)
       .map((v) => ({ id: v.fixtureId ?? `${v.homeTeam}|${v.awayTeam}`, home: v.homeTeam, away: v.awayTeam }));
+    if (spine.length === 0) {
+      // Vitibet only lists today. For other dates (Statarea covers 3 days) use that day's fixtures, but ONLY ones whose
+      // two teams are already known to the registry, so a platform spelling attaches to an existing team and this
+      // path can never create new (possibly duplicate) teams.
+      spine = sources.statarea
+        .filter((s) => s.date === date && resolveTeam(registry, s.homeTeam) && resolveTeam(registry, s.awayTeam))
+        .map((s) => ({ id: `statarea|${s.homeTeam}|${s.awayTeam}`, home: s.homeTeam, away: s.awayTeam }));
+    }
     if (spine.length === 0) continue;
     report.withSpine += dayLegs.length;
 

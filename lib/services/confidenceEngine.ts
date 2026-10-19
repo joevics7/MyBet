@@ -20,6 +20,7 @@ import { fetchTeamRecentForm as fdForm } from './footballData';
 import { fetchTeamRecentForm as afForm } from './apiFootball';
 import type { FixtureProvider } from './teamMatcher';
 import { findFixtureByTeamNames, type MatchedFixture } from './teamMatcher';
+import type { TeamRegistry } from './teamNameMatch';
 import {
   computeTeamStrength,
   expectedGoals,
@@ -204,6 +205,7 @@ export interface ConfidenceScoreFromNamesInput {
   kickoffAt: string | null;
   market: MarketSelector;
   leagueAvg?: LeagueAverages;
+  registry?: TeamRegistry; // learned team spellings, used to match platform names to the provider's fixture
 }
 
 // The entry point a decoded selection should actually call -- resolves
@@ -214,7 +216,7 @@ export interface ConfidenceScoreFromNamesInput {
 export async function computeConfidenceScoreFromNames(
   input: ConfidenceScoreFromNamesInput,
 ): Promise<ConfidenceEngineResult> {
-  const fixture = await findFixtureByTeamNames(input.homeTeamName, input.awayTeamName, input.kickoffAt);
+  const fixture = await findFixtureByTeamNames(input.homeTeamName, input.awayTeamName, input.kickoffAt, input.registry);
 
   if (!fixture) {
     return {
