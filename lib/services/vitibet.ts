@@ -73,6 +73,7 @@ export function ruleParseRow(text: string): RuleRow | null {
   const away = m[4].replace(/\s+(?:\d{1,2}|-)\s*$/, '').trim();
   const home = m[1].trim();
   if (!home || !away) return null;
+  if (/·|\bINDEX\b/.test(home + ' ' + away)) return null;
   return { home, away, homeScore: parseInt(m[2], 10), awayScore: parseInt(m[3], 10) };
 }
 
@@ -90,6 +91,8 @@ function extractRows(html: string): LinkRow[] {
     const href = m[1];
     const fixtureId = m[2];
     const text = stripHtml(m[3]);
+    // "Tickets" section rows look like "7 Home Away · Country · League +4.55 INDEX": a different layout, never a match row.
+    if (/·|\bINDEX\b/.test(text)) continue;
     const leagueId = href.match(/league_id=(\d+)/)?.[1] ?? null;
     const hasScore = LOOSE_SCORE.test(text.replace(LEADING_TIME, ''));
     const existing = byFixture.get(fixtureId);
