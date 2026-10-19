@@ -17,11 +17,16 @@ import { fetchMatchesByDateRange as afFetchRange, isApiFootballConfigured } from
 import { scoreForMarket, type MarketSelector } from '@/lib/services/confidenceEngine';
 import { probabilitiesWithFallback } from './probabilities';
 import { loadTeamRegistry } from '@/lib/services/teamRegistry';
+import { fetchTipsterSources, collectExpectations, type TipsterSourceData } from '@/lib/services/tipsterConsensus';
+import { selectorProbability } from '@/lib/services/scoreConsensus';
+import { blendProbability } from './blend';
+import { rankByCoverage } from './shortlist';
+import { probabilityToScore } from '@/lib/services/poissonModel';
 import type { TeamRegistry } from '@/lib/services/teamNameMatch';
 import type { CandidateSelection } from '@/lib/services/predictorSelection';
 
 export const FIXTURE_WINDOW_DAYS = 2;
-export const MAX_GAMES_PER_RUN = 150; // form comes from stored history (no API request per team), so many more games can be scanned
+export const MAX_GAMES_PER_RUN = 45; // analysed per set: the funnel (shortlist.ts) picks the 45 best-covered games of the day
 const FD_REQUEST_BUDGET_GAMES = 5; // football-data.org allows 10 requests/min; each game costs 2
 const CONCURRENCY = 4;
 const SCAN_BUDGET_MS = 25000; // both sets scan in parallel; leaves the rest of the 60s for analysis, saving and codes
@@ -56,7 +61,7 @@ export function bookPrice(odds: FeedMatch['odds'], m: MarketSelector): number | 
 }
 
 // Youth/women/reserve sides have thin, unreliable form data: skip them.
-const LOW_SIGNAL = /\b(u-?\d{2}|women|ladies|reserves?|youth|\(w\))\b|\bii\b/i;
+export const LOW_SIGNAL = /\b(u-?\d{2}|women|ladies|reserves?|youth|\(w\))\b|\bii\b/i;
 
 export interface CollectStats {
   mode: 'bookmaker' | 'model';
@@ -68,6 +73,7 @@ export interface CollectStats {
   failed: number;
   candidates: number;
   budgetHit: boolean;
+  funnel?: { considered: number; analysed: number; withTipsterCoverage: number };
   providers?: { apiFootballConfigured: boolean; footballDataConfigured: boolean; fixturesFrom: Record<string, number>; formFrom: Record<string, number>; formFallbacks: number; lastFormProblem?: string };
   note?: string;
 }
@@ -85,6 +91,21 @@ function newProviderStats(): NonNullable<CollectStats['providers']> {
   };
 }
 const bump = (rec: Record<string, number>, key: string) => { rec[key] = (rec[key] ?? 0) + 1; };
+
+async function loadSources(): Promise<TipsterSourceData | null> {
+  const dates = Array.from({ length: FIXTURE_WINDOW_DAYS + 1 }, (_, i) => new Date(Date.now() + i * 86400000).toISOString().slice(0, 10));
+  return fetchTipsterSources(dates).catch((err) => {
+    console.error('[predictor] tipster sources unavailable, using the model alone:', err);
+    return null;
+  });
+}
+
+// One probability per market: the model, adjusted by the tipster sites that cover this game (blend.ts).
+function blendedScore(model: number, expectations: ReturnType<typeof collectExpectations>['expectations'], market: MarketSelector) {
+  const tipster = expectations.length ? selectorProbability(expectations, market) : null;
+  const { p } = blendProbability(model, tipster, expectations.length);
+  return { probability: p, score: probabilityToScore(p) };
+}
 
 async function inPool<T>(items: T[], worker: (item: T) => Promise<void>, deadline: number): Promise<boolean> {
   let next = 0;
@@ -125,9 +146,13 @@ async function fromBookmaker(started: number): Promise<Collected | null> {
   const providers = (stats.providers = newProviderStats());
   const registry: TeamRegistry | undefined = await loadTeamRegistry().catch(() => undefined);
   const fdBudget = { left: FD_REQUEST_BUDGET_GAMES * 2 };
+  const sources = await loadSources();
+  // The funnel: games covered by the most tipster sites first; analysis stops once MAX_GAMES_PER_RUN games are analysed.
+  const ranked = rankByCoverage(games.map((g) => ({ ...g, kickoff: g.kickoff })), sources);
+  stats.funnel = { considered: games.length, analysed: 0, withTipsterCoverage: ranked.filter((r) => r.sources > 0).length };
 
-  stats.budgetHit = await inPool(games.slice(0, MAX_GAMES_PER_RUN * 2), async (g) => {
-    if (stats.gamesScanned >= MAX_GAMES_PER_RUN) return;
+  stats.budgetHit = await inPool(ranked.slice(0, MAX_GAMES_PER_RUN * 3).map((r) => r.game), async (g) => {
+    if (stats.funnel!.analysed >= MAX_GAMES_PER_RUN) return;
     try {
       const fixture = await findFixtureByTeamNames(g.home, g.away, g.kickoff, registry);
       if (!fixture) return void stats.notCovered++;
@@ -140,11 +165,14 @@ async function fromBookmaker(started: number): Promise<Collected | null> {
       }
       bump(providers.formFrom, res.usedProvider);
       if (res.fellBack) providers.formFallbacks++;
+      stats.funnel!.analysed++;
       const out = { data: res.data };
+      const expectations = sources ? collectExpectations(g.home, g.away, g.kickoff, sources).expectations : [];
 
       const form = { home: out.data.homeFormString, away: out.data.awayFormString, homeGoalsAvg: out.data.homeGoalsAvg, awayGoalsAvg: out.data.awayGoalsAvg };
       for (const market of CANDIDATE_MARKETS) {
-        const scored = scoreForMarket(market, out.data.probs);
+        const base = scoreForMarket(market, out.data.probs);
+        const scored = base ? blendedScore(base.probability, expectations, market) : null;
         const odds = bookPrice(g.odds, market);
         if (!scored || odds === null) continue;
         candidates.push({
@@ -196,20 +224,25 @@ async function fromFixtures(started: number): Promise<Collected> {
   if (!useAf && providers.footballDataConfigured) fixtures = await fdFetchRange(dateFrom, dateTo);
   const registry: TeamRegistry | undefined = await loadTeamRegistry().catch(() => undefined);
   const fdBudget = { left: FD_REQUEST_BUDGET_GAMES * 2 };
-  const scheduled = Array.from(new Map(fixtures.map((f) => [f.id, f])).values())
-    .filter((f) => (f.status === 'SCHEDULED' || f.status === 'TIMED') && !LOW_SIGNAL.test(`${f.homeTeam.name} ${f.awayTeam.name} ${f.competition.name}`))
-    .slice(0, MAX_GAMES_PER_RUN);
+  const sources = await loadSources();
+  const upcoming = Array.from(new Map(fixtures.map((f) => [f.id, f])).values())
+    .filter((f) => (f.status === 'SCHEDULED' || f.status === 'TIMED') && !LOW_SIGNAL.test(`${f.homeTeam.name} ${f.awayTeam.name} ${f.competition.name}`));
+  // The funnel: best-covered games first; analysis stops once MAX_GAMES_PER_RUN games are analysed.
+  const rankedFixtures = rankByCoverage(upcoming.map((f) => ({ home: f.homeTeam.name, away: f.awayTeam.name, kickoff: f.utcDate, f })), sources);
+  const scheduled = rankedFixtures.slice(0, MAX_GAMES_PER_RUN * 3).map((r) => r.game.f);
 
   const stats: CollectStats = {
     mode: 'model', source: useAf ? 'API-Football fixtures' : 'football-data.org fixtures', gamesAvailable: scheduled.length,
     gamesScanned: 0, notCovered: 0, insufficientData: 0, failed: 0, candidates: 0, budgetHit: false,
     note: 'Odds are model-implied (1 / probability), not bookmaker prices.',
     providers,
+    funnel: { considered: upcoming.length, analysed: 0, withTipsterCoverage: rankedFixtures.filter((r) => r.sources > 0).length },
   };
   providers.fixturesFrom[useAf ? 'apifootball' : 'footballdata'] = scheduled.length;
   const candidates: CandidateSelection[] = [];
 
   stats.budgetHit = await inPool(scheduled, async (f) => {
+    if (stats.funnel!.analysed >= MAX_GAMES_PER_RUN) return;
     try {
       const res = await probabilitiesWithFallback(
         { home: f.homeTeam.name, away: f.awayTeam.name, kickoff: f.utcDate },
@@ -221,13 +254,16 @@ async function fromFixtures(started: number): Promise<Collected> {
         return void (res.reason === 'error' ? stats.failed++ : stats.insufficientData++);
       }
       stats.gamesScanned++;
+      stats.funnel!.analysed++;
       bump(providers.formFrom, res.usedProvider);
       if (res.fellBack) providers.formFallbacks++;
       const out = { data: res.data };
+      const expectations = sources ? collectExpectations(f.homeTeam.name, f.awayTeam.name, f.utcDate, sources).expectations : [];
       const form = { home: out.data.homeFormString, away: out.data.awayFormString, homeGoalsAvg: out.data.homeGoalsAvg, awayGoalsAvg: out.data.awayGoalsAvg };
       for (const market of CANDIDATE_MARKETS) {
-        const scored = scoreForMarket(market, out.data.probs);
-        if (!scored) continue;
+        const base = scoreForMarket(market, out.data.probs);
+        if (!base) continue;
+        const scored = blendedScore(base.probability, expectations, market);
         const modelOdds = safeOdds(scored.probability);
         candidates.push({
           externalEventId: String(f.id),

@@ -12,7 +12,7 @@
 //  - A team with fewer than 5 results in the window simply has too little data (no extra request is spent).
 
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
-import type { TeamMatchResult } from './poissonModel';
+import { MIN_SAMPLE_SIZE, type TeamMatchResult } from './poissonModel';
 
 export const HISTORY_DAYS = 35;      // how far back the form window reaches
 export const MIN_DAYS_TO_USE = 21;   // form is served from history only once this many days are stored
@@ -67,11 +67,54 @@ async function loadIndex(): Promise<Index | null> {
   return cache.index;
 }
 
-// Recent results for a team (most recent first), or null when the stored history is not ready yet.
+// ---- Top-ups: last-10 results fetched per team, only for teams the 35-day history cannot cover --------------------------
+export const TOPUP_MAX_AGE_DAYS = 3;
+let topupCache: { at: number; map: Map<number, TeamMatchResult[]> } | null = null;
+
+async function loadTopups(): Promise<Map<number, TeamMatchResult[]>> {
+  if (topupCache && Date.now() - topupCache.at < 10 * 60 * 1000) return topupCache.map;
+  const map = new Map<number, TeamMatchResult[]>();
+  try {
+    const since = new Date(Date.now() - TOPUP_MAX_AGE_DAYS * 86400000).toISOString();
+    const { data, error } = await getSupabaseAdmin().from('team_form_topup').select('team_id, results').gte('fetched_at', since);
+    if (error) throw new Error(error.message);
+    for (const row of data ?? []) map.set(Number(row.team_id), row.results as TeamMatchResult[]);
+  } catch (err) {
+    console.error('[formHistory] could not load top-ups (table missing?):', err);
+  }
+  topupCache = { at: Date.now(), map };
+  return map;
+}
+
+export async function saveTopup(teamId: number, results: TeamMatchResult[]): Promise<void> {
+  const { error } = await getSupabaseAdmin().from('team_form_topup').upsert({ team_id: teamId, results, fetched_at: new Date().toISOString() });
+  if (error) throw new Error(error.message);
+  topupCache = null;
+}
+
+// How many API requests the top-ups have used in the last 24 hours (one request per stored team).
+export async function topupsUsedToday(): Promise<number> {
+  const since = new Date(Date.now() - 86400000).toISOString();
+  const { count } = await getSupabaseAdmin().from('team_form_topup').select('team_id', { count: 'exact', head: true }).gte('fetched_at', since);
+  return count ?? 0;
+}
+
+// Of these teams, the ones with fewer than a usable sample in the history AND no fresh top-up (order kept).
+export async function teamsNeedingTopup(teamIds: number[]): Promise<number[]> {
+  const [index, topups] = await Promise.all([loadIndex(), loadTopups()]);
+  return teamIds.filter((id) => (index?.byTeam.get(id)?.length ?? 0) < MIN_SAMPLE_SIZE && !topups.has(id));
+}
+
+// Recent results for a team (most recent first), or null when no stored data can answer yet.
 export async function lookupForm(teamId: number, limit = 10): Promise<TeamMatchResult[] | null> {
-  const index = await loadIndex();
-  if (!index || index.coveredDays < MIN_DAYS_TO_USE) return null;
-  return (index.byTeam.get(teamId) ?? []).slice(0, limit);
+  const [index, topups] = await Promise.all([loadIndex(), loadTopups()]);
+  const topup = topups.get(teamId);
+  const historyReady = !!index && index.coveredDays >= MIN_DAYS_TO_USE;
+  const own = historyReady ? index!.byTeam.get(teamId) ?? [] : [];
+  if (historyReady && own.length >= MIN_SAMPLE_SIZE) return own.slice(0, limit);
+  // History is thin or not ready for this team: the top-up (last 10, any date) is the better answer when we have one.
+  if (topup && topup.length > own.length) return topup.slice(0, limit);
+  return historyReady ? own.slice(0, limit) : null;
 }
 
 export interface HistoryReport {

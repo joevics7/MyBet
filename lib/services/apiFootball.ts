@@ -113,6 +113,11 @@ export async function fetchTeamRecentForm(teamId: number, limit = 10, historyOnl
   // request per team on the 100/day free quota that the Decoder also needs.
   if (historyOnly) return [];
 
+  return fetchTeamLastResults(teamId, limit);
+}
+
+// One API request: the team's last finished matches (the top-up cron and the Decoder fallback both use this).
+export async function fetchTeamLastResults(teamId: number, limit = 10): Promise<TeamMatchResult[]> {
   const hit = formCache.get(teamId);
   if (hit && Date.now() - hit.at < FORM_TTL_MS) return hit.data.slice(0, limit);
 

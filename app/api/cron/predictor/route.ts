@@ -13,6 +13,9 @@
 //     'bookmaker': the day's games from SportyBet's feed with REAL odds;
 //     'model':     fixtures from our football data with model-implied odds.
 //   Different games, different odds. Up to five tickets (odds bands) per set.
+// - Analysis: each set analyses the 45 best-covered games of the next days (lib/predictor/shortlist.ts: games the most tipster
+//   sites cover come first). Each pick's probability = our form model, adjusted by those tipster sites (lib/predictor/blend.ts).
+//   Form comes from the stored history plus /api/cron/form-topup (last-10 for teams the history lacks); both football APIs back each other up.
 // - Booking codes are created AFTER the tickets are saved (SportyBet, Football.com,
 //   MSport, Betway where every pick exists) and attached to each ticket, so a
 //   timeout can never lose the tickets themselves.
