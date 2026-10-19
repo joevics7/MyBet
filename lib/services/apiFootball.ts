@@ -96,8 +96,14 @@ export async function fetchMatchesByDateRange(dateFrom: string, dateTo: string):
   for (let t = Date.parse(dateFrom); t <= Date.parse(dateTo) && days.length < 7; t += 86400000) {
     days.push(new Date(t).toISOString().slice(0, 10));
   }
-  const perDay = await Promise.all(days.map(fetchDate));
-  return perDay.flat();
+  // One failing day (e.g. a free plan refusing dates too far ahead, or one rate-limited call) must not lose the
+  // other days: keep what worked and only fail when NO day worked.
+  const settled = await Promise.allSettled(days.map(fetchDate));
+  const ok = settled.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
+  const failed = settled.flatMap((r, i) => (r.status === 'rejected' ? [`${days[i]}: ${r.reason instanceof Error ? r.reason.message : r.reason}`] : []));
+  if (failed.length) console.error('[apiFootball] some days failed:', failed.join(' | '));
+  if (ok.length === 0) throw new Error(failed[0] ?? 'API-Football returned no days');
+  return ok.flat();
 }
 
 const formCache = new Map<number, { at: number; data: TeamMatchResult[] }>();
