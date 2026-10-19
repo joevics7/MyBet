@@ -5,6 +5,9 @@ import type { DecodeResult } from '@/lib/services/types';
 import { computeConfidenceScoreFromNames } from '@/lib/services/confidenceEngine';
 import { fetchTipsterSources, matchTipsterConsensus } from '@/lib/services/tipsterConsensus';
 import { parseMarketString } from '@/lib/services/splitter';
+import { waitUntil } from '@vercel/functions';
+import { learnPlatformNames } from '@/lib/services/platformAliases';
+import { loadTeamRegistry } from '@/lib/services/teamRegistry';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30; // now does real scoring work per selection, not just a quick decode
@@ -160,6 +163,17 @@ export async function POST(req: NextRequest) {
     }
 
     scoredSelections.push({ ...sel, score, tipsterScore, tipsterSources });
+  }
+
+  // Learn this platform's team spellings in the background (does not delay the response).
+  if (tipsterSourceData.vitibet?.length) {
+    waitUntil(
+      (async () => {
+        const registry = tipsterSourceData.teamRegistry ?? (await loadTeamRegistry());
+        const report = await learnPlatformNames(platform, result.selections, tipsterSourceData, registry);
+        console.log('[decode] platform alias learning:', JSON.stringify(report));
+      })().catch((err) => console.error('[decode] platform alias learning failed:', err)),
+    );
   }
 
   return NextResponse.json({ ...result, selections: scoredSelections, decodeId, platformId });

@@ -115,6 +115,21 @@ const AUTO_LEARN_MIN = 0.8; // each team must be at least this similar for a no-
 const CANDIDATE_MIN = 0.4;
 const MAX_CANDIDATES = 6;
 
+// One-word spellings that could belong to several famous clubs ("Barcelona" = Barcelona SC or FC Barcelona?).
+// They still match inside a single fixture (the opponent anchors it), but are never saved as a global alias.
+const AMBIGUOUS_SINGLE_NAMES = new Set([
+  'barcelona', 'paris', 'madrid', 'milan', 'manchester', 'newcastle', 'sporting', 'real', 'atletico', 'athletic',
+  'racing', 'nacional', 'olimpia', 'dynamo', 'dinamo', 'spartak', 'lokomotiv', 'central', 'independiente',
+  'estudiantes', 'union', 'olympique', 'inter', 'internacional', 'universidad', 'deportivo', 'juventud', 'san',
+  'city', 'united', 'rovers', 'wanderers', 'town', 'rangers', 'celtic', 'villa', 'palace', 'river', 'boca',
+]);
+
+export function isSafeToSave(variant: string): boolean {
+  const key = teamKey(variant);
+  if (!key) return false;
+  return !(key.split(' ').length === 1 && AMBIGUOUS_SINGLE_NAMES.has(key));
+}
+
 // The name a team should be stored under: its existing canonical name if the registry already knows it.
 function canonicalFor(registry: TeamRegistry, spineName: string): string {
   const id = resolveTeam(registry, spineName);
@@ -130,7 +145,7 @@ export function planAliasLearning(spine: SpineFixture[], rows: SourceRow[], regi
 
   const learn = (spineName: string, variant: string, source: string, via: LearnedVariant['via']) => {
     // a spelling already stored (for this or any team) is never re-learned or overwritten
-    if (registry.idByKey.has(teamKey(variant))) return;
+    if (registry.idByKey.has(teamKey(variant)) || (via !== 'spine' && !isSafeToSave(variant))) return;
     learned.push({ canonicalName: canonicalFor(registry, spineName), variant, source, via });
   };
 
@@ -241,7 +256,7 @@ export function validateAiAnswers(
     claimed.add(claimKey);
     accepted++;
     const add = (spineName: string, variant: string, source: string, via: LearnedVariant['via']) => {
-      if (registry.idByKey.has(teamKey(variant))) return;
+      if (registry.idByKey.has(teamKey(variant)) || (via !== 'spine' && !isSafeToSave(variant))) return;
       learned.push({ canonicalName: canonicalFor(registry, spineName), variant, source, via });
     };
     add(target.home, item.row.home, item.row.source, 'ai');
@@ -293,7 +308,7 @@ export async function resolveWithAi(needAi: AiCandidateRow[], registry: TeamRegi
 // ---------------------------------------------------------------- saving
 
 export async function saveLearnedVariants(learned: LearnedVariant[]): Promise<{ teams: number; variants: number; error: string | null }> {
-  const list = dedupeLearned(learned);
+  const list = dedupeLearned(learned).filter((l) => l.via === 'spine' || isSafeToSave(l.variant)); // the spine's own spelling is the team's base name
   if (list.length === 0) return { teams: 0, variants: 0, error: null };
   const admin = getSupabaseAdmin();
 

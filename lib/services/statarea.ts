@@ -45,6 +45,11 @@ export interface StatareaPrediction {
 const MATCH_PATTERN =
   /TIP\s+(\S+)\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})\s+-\s+(.+?)\s+-\s+(.+?)\s+1\s+X\s+2\s+H1\s+HX\s+H2\s+1\.5\s+2\.5\s+3\.5\s+BTS\s+OTS\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/g;
 
+// Statarea puts a "post" marker (postponed match) in front of the home team name; it is not part of the name.
+export function cleanTeamName(name: string): string {
+  return name.trim().replace(/^post\s+/, '');
+}
+
 function stripHtml(html: string): string {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
@@ -92,8 +97,8 @@ export async function fetchStatareaPredictions(date?: string): Promise<StatareaP
     predictions.push({
       date: matchDate,
       time,
-      homeTeam: homeTeam.trim(),
-      awayTeam: awayTeam.trim(),
+      homeTeam: cleanTeamName(homeTeam),
+      awayTeam: cleanTeamName(awayTeam),
       tip,
       homeWinPercent: parseInt(n1, 10),
       drawPercent: parseInt(n2, 10),
