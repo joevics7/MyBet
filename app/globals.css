@@ -63,6 +63,23 @@
   h1, h2, h3, h4 {
     font-family: var(--font-fraunces), Georgia, serif;
   }
+  /* Mobile safety net: long words/codes wrap instead of widening the page, and media never exceeds the screen. */
+  body {
+    overflow-wrap: break-word;
+  }
+  main {
+    min-width: 0;
+  }
+  .grid > * {
+    min-width: 0;
+  }
+  img, svg, video, canvas {
+    max-width: 100%;
+  }
+  pre {
+    max-width: 100%;
+    overflow-x: auto;
+  }
   .font-mono, .tabular-nums-slip {
     font-family: var(--font-plex-mono), ui-monospace, SFMono-Regular, monospace;
   }

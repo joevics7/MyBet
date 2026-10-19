@@ -44,7 +44,7 @@ export default function AboutPage() {
         </p>
       </div>
 
-      <div className="mt-12 grid sm:grid-cols-2 gap-4">
+      <div className="mt-12 grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="p-5 border border-border bg-card rounded-sm">
           <Gauge className="h-5 w-5 text-[hsl(var(--seal))] mb-3" strokeWidth={1.75} />
           <h3 className="font-serif font-semibold text-sm mb-1">Every selection scored</h3>

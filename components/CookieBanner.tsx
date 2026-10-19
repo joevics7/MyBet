@@ -108,7 +108,7 @@ export function CookieBanner() {
       aria-label="Cookie consent"
       className="fixed left-0 right-0 bottom-16 md:bottom-0 safe-area-pb z-40 bg-[hsl(var(--ink))] border-t border-white/10 px-3 py-2 sm:px-4 sm:py-2.5 flex items-center gap-3"
     >
-      <p className="text-[11px] sm:text-xs text-[hsl(var(--paper))]/60 flex-1 truncate sm:whitespace-normal">
+      <p className="text-[11px] sm:text-xs text-[hsl(var(--paper))]/60 flex-1 min-w-0">
         We use cookies for analytics and ads.{' '}
         <Link
           href="/privacy"

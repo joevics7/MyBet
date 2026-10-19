@@ -24,7 +24,7 @@ export default function HomePage() {
     <div>
       {/* Hero */}
       <section className="relative border-b border-border bg-dot-grid bg-hero-glow overflow-hidden">
-        <div className="max-w-6xl mx-auto px-4 py-16 md:py-24 grid md:grid-cols-[1.05fr_0.95fr] gap-12 md:gap-8 items-center">
+        <div className="max-w-6xl mx-auto px-4 py-16 md:py-24 grid grid-cols-1 md:grid-cols-[1.05fr_0.95fr] gap-12 md:gap-8 items-center">
           <div>
             <p className="font-mono text-xs uppercase tracking-[0.16em] text-[hsl(var(--verified))] mb-5">
               Booking code tools &middot; Telegram bot + web
@@ -110,7 +110,7 @@ export default function HomePage() {
             See all &rarr;
           </Link>
         </div>
-        <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
           {coreTools.map((tool) => (
             <Link
               key={tool.slug}
@@ -131,7 +131,7 @@ export default function HomePage() {
       {bonusTool && (
         <section className="border-t border-border bg-dot-grid">
           <div className="max-w-6xl mx-auto px-4 py-16 md:py-24">
-            <div className="grid md:grid-cols-[1fr_auto] gap-6 items-center">
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-6 items-center">
               <div>
                 <p className="font-mono text-xs uppercase tracking-[0.14em] text-[hsl(var(--verified))] mb-2">
                   Bonus

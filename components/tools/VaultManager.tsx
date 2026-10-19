@@ -303,7 +303,7 @@ export function VaultManager() {
           entries.map((entry) => (
             <div key={entry.id} className="flex items-center justify-between gap-3 rounded-sm border border-border px-4 py-3">
               <div className="min-w-0">
-                <p className="text-sm font-mono truncate">
+                <p className="text-sm font-mono break-words">
                   {entry.code} <span className="text-muted-foreground font-sans">— {entry.platforms?.name ?? 'Unknown'}</span>
                 </p>
                 <p className="text-xs text-muted-foreground">

@@ -22,7 +22,7 @@ export default function ToolsIndexPage() {
         services — so a score you see in one tool matches what you&rsquo;d see anywhere else.
       </p>
 
-      <div className="mt-10 grid sm:grid-cols-2 md:grid-cols-3 gap-5">
+      <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
         {TOOLS_CATALOG.map((tool) => (
           <Link
             key={tool.slug}

@@ -153,12 +153,12 @@ function MatchCard({ match }: { match: DayMatch }) {
   return (
     <div className="rounded-sm border border-border p-3">
       <div className="flex items-baseline justify-between gap-2">
-        <p className="truncate text-sm font-medium">
+        <p className="min-w-0 break-words text-sm font-medium">
           {match.home} v {match.away}
         </p>
         <span className="shrink-0 font-mono text-xs text-muted-foreground">{timeOf(match.kickoff)}</span>
       </div>
-      <p className="truncate text-[11px] text-muted-foreground">
+      <p className="break-words text-[11px] text-muted-foreground">
         {match.country ? `${match.country} · ` : ''}
         {match.league}
       </p>
@@ -217,7 +217,7 @@ function Grid({
       )}
       {rows.map((p) => (
         <div key={p.slug} style={style} className="grid items-center gap-1 py-0.5 text-sm">
-          <span className="truncate text-muted-foreground">{p.label}</span>
+          <span className="min-w-0 break-words text-muted-foreground">{p.label}</span>
           {outcomes.map((_, i) => {
             const v = p.odds[marketKey]?.[i] ?? null;
             return (

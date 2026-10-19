@@ -63,7 +63,7 @@ export function ConverterForm() {
   return (
     <div className="rounded-sm border border-border bg-card p-6">
       <form onSubmit={handleSubmit} className="space-y-3">
-        <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-2">
           <div>
             <label htmlFor="cv-source" className={label}>From</label>
             <select id="cv-source" value={source} onChange={(e) => setSource(e.target.value)} className={select}>
@@ -164,7 +164,7 @@ export function ConverterForm() {
                   <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
                 )}
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{l.homeTeam} v {l.awayTeam}</p>
+                  <p className="break-words text-sm font-medium">{l.homeTeam} v {l.awayTeam}</p>
                   <p className="text-xs text-muted-foreground">{l.market}</p>
                   {l.reason && <p className="mt-0.5 text-xs text-muted-foreground">{l.reason}</p>}
                   {l.status !== 'dropped' && (

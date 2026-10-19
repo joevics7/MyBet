@@ -158,7 +158,7 @@ export function SplitterForm() {
         <div className="mt-5 space-y-4">
           {groups.map((group, gi) => (
             <div key={gi} className="rounded-sm border border-border p-4">
-              <div className="flex items-center justify-between gap-2 mb-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                 <div className="flex items-center gap-1.5">
                   <Layers className="h-3.5 w-3.5 text-[hsl(var(--seal))]" />
                   <p className="text-xs font-mono uppercase tracking-wide">{group.label}</p>
@@ -169,8 +169,8 @@ export function SplitterForm() {
               </div>
               <div className="space-y-1.5">
                 {group.selections.map((s, si) => (
-                  <div key={si} className="flex items-center justify-between text-sm">
-                    <span className="truncate min-w-0">
+                  <div key={si} className="flex items-start justify-between gap-2 text-sm">
+                    <span className="min-w-0 break-words">
                       {s.homeTeam} v {s.awayTeam} — {s.market}
                     </span>
                     <span className="flex items-center gap-2 flex-shrink-0 ml-2">

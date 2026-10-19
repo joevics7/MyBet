@@ -135,18 +135,18 @@ export function DecoderForm() {
 
       {result && result.status === 'ok' && (
         <div className="mt-5 space-y-2">
-          <div className="flex items-center justify-between text-xs font-mono uppercase tracking-wide text-muted-foreground">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs font-mono uppercase tracking-wide text-muted-foreground">
             <span>{result.selections.length} selections</span>
             {result.totalOdds && <span>Total odds: {result.totalOdds}</span>}
           </div>
           {result.selections.map((s, i) => (
             <div key={i} className="rounded-sm border border-border px-3.5 py-2.5">
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-sm truncate">
+                  <p className="text-sm break-words">
                     {s.homeTeam} v {s.awayTeam}
                   </p>
-                  <p className="text-xs text-muted-foreground truncate">{s.market}</p>
+                  <p className="text-xs text-muted-foreground break-words">{s.market}</p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <span className="text-xs font-mono text-muted-foreground">{s.odds.toFixed(2)}</span>
@@ -155,14 +155,14 @@ export function DecoderForm() {
               </div>
 
               <div className="mt-2 pt-2 border-t border-border/60 space-y-1">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-3">
                   <span className="text-xs text-muted-foreground">BetMeter Score</span>
                   <span className={`text-xs font-mono font-semibold ${scoreColor(s.score)}`}>
                     {s.score ?? '—'}
                   </span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="min-w-0 text-xs text-muted-foreground">
                     Tipster Score
                     {s.tipsterSources && s.tipsterSources.length > 0 && (
                       <span className="text-muted-foreground/70"> ({s.tipsterSources.join(', ')})</span>

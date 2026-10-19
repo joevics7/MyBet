@@ -17,15 +17,15 @@ interface ToolPageShellProps {
 
 export function ToolPageShell({ title, tagline, status, body, howItWorks, faq = [] }: ToolPageShellProps) {
   return (
-    <div className="max-w-6xl mx-auto px-4 py-10">
-      <nav className="text-xs text-muted-foreground mb-6 flex items-center gap-1.5 font-mono">
+    <div className="max-w-6xl mx-auto w-full min-w-0 px-4 py-10">
+      <nav className="text-xs text-muted-foreground mb-6 flex flex-wrap items-center gap-1.5 font-mono">
         <Link href="/tools" className="hover:text-[hsl(var(--verified))]">Tools</Link>
         <span>/</span>
         <span className="text-foreground">{title}</span>
       </nav>
 
-      <div className="grid md:grid-cols-[1.15fr_1fr] gap-10">
-        <div>
+      <div className="grid grid-cols-1 md:grid-cols-[1.15fr_1fr] gap-10">
+        <div className="min-w-0">
           <div className="flex items-center gap-3 mb-2">
             <p className="text-xs uppercase tracking-[0.14em] font-mono text-[hsl(var(--verified))]">
               BetMeter tool
@@ -61,7 +61,7 @@ export function ToolPageShell({ title, tagline, status, body, howItWorks, faq = 
           )}
         </div>
 
-        <div>
+        <div className="min-w-0">
           <div className="md:sticky md:top-24">{body}</div>
         </div>
       </div>

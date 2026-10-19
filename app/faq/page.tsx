@@ -74,7 +74,7 @@ export default function FAQPage() {
         <h1 className="font-serif text-3xl md:text-4xl font-semibold">Frequently asked questions</h1>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-12">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
         <div className="lg:col-span-2 space-y-4">
           {FAQ_ITEMS.map((faq) => (
             <div key={faq.question} className="border border-border bg-card rounded-sm p-6">
