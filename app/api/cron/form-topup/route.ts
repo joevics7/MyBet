@@ -33,6 +33,7 @@ export async function GET(req: NextRequest) {
   const asked = Number(req.nextUrl.searchParams.get('max'));
   const max = Number.isFinite(asked) && asked > 0 ? Math.min(Math.floor(asked), 9) : 6;
 
+  const startedAt = Date.now();
   try {
     const dates = Array.from({ length: FIXTURE_WINDOW_DAYS + 1 }, (_, i) => new Date(Date.now() + i * 86400000).toISOString().slice(0, 10));
     const fixtures = await fetchMatchesByDateRange(dates[0], dates[dates.length - 1]);
@@ -60,6 +61,7 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json({
+      tookMs: Date.now() - startedAt,
       shortlistedGames: shortlist.length,
       teams: teamIds.length,
       teamsNeedingTopup: missing.length,
