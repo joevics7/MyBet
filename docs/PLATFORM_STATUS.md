@@ -1,8 +1,13 @@
 # Platform status, limitations and open issues
 
-Last updated 2026-10-14. Keep this in sync with `lib/services/platforms.ts`.
+Last updated 2026-10-21. Keep this in sync with `lib/services/platforms.ts`.
 "Tested" means tried against the real site from our server. "Captured" means built from a
 browser capture and not yet run live.
+
+**Live test results, 2026-10-21 (from the owner).** Decode works on SportyBet, Football.com, MSport, Betway, Betwinner,
+Helabet, Paripesa and Melbet. Only SportyBet and Football.com work end to end (decode, Converter, Splitter, Vault). Decode
+does NOT work on Betpawa, 1xBet, 22bet and Bet9ja. Afropari was a stub on that date and is now built (below, not yet run live).
+The four xBet-engine sites decode without the `x-hd` token, so the bot-protection worry below did not stop decode there.
 
 ## At a glance
 
@@ -17,7 +22,7 @@ browser capture and not yet run live.
 | Betwinner | yes (captured) | yes (captured) | no | yes | no | Own file, fully captured (decode response + create, pre-match). Not run live |
 | Helabet | yes (captured) | yes (captured) | no | yes | no | Own file; captured on live basketball picks. Not run live |
 | Melbet | assumed response | yes (captured) | no | yes | no | Own file; decode response not in the capture. Not run live |
-| Afropari | no | no | no | no | no | Not implemented: no decode/create capture; lookup is behind a captcha check |
+| Afropari | yes (captured) | yes (single pick captured) | no | no | no | Own file, built 2026-10-21 from a capture with GetCoupon, UpdateCoupon and SaveCoupon. Not run live |
 | 22bet | no | built, unreachable | no | no | no | Decode not implemented (no capture). Create built from capture but needs 22bet match ids |
 | Betpawa | not mapped | captured | no | yes (once decode works) | no | Request built; response is protobuf with unknown layout. Create code from a Betpawa decode only |
 | MSport | yes (rebuilt 2026-10-14) | yes | no | yes | yes | Rebuilt from a capture, own adapter; not yet run live (capture was logged in) |
@@ -25,6 +30,8 @@ browser capture and not yet run live.
 | Bet9ja | paste-import only | no | no | yes (via paste-import) | no | Server request blocked by Akamai; manual route added 2026-10-14, untested |
 
 ## Bot protection (Betwinner, Afropari, 22bet, Helabet, Melbet; probably others)
+
+Update 2026-10-21: decode works on Betwinner, Helabet, Paripesa and Melbet without the token, so the expectation below was too pessimistic for decode; create is still untested on most of them.
 
 **Fingerprint token.** Every Betwinner and Afropari request carries an `x-hd` token minted by a
 browser fingerprinting check (a 214 KB encrypted payload posted to `/hd-api/external/verify`).
@@ -92,11 +99,20 @@ Bet9ja (hide it from the pickers via `PICKER_EXCLUDED` in `lib/telegram/menus.ts
 - Live picks only (`Kind` 1). Replayed create body is identical. Same `x-hd` risk. Not a Converter target.
 
 ### Afropari (`lib/services/afropari.ts`)
-- NOT implemented. The capture holds the booking-code page loading a captcha script and `POST /hd-api/external/verify`
-  (a short-lived token), plus UpdateCoupon price refreshes (partner 300, group 806, pre-match `Kind` 3). It has no
-  GetCoupon and no SaveCoupon request, so decode reports "unsupported" instead of assuming Betwinner's calls.
-- Needs a capture of the actual decode request and response, and of the create call. If the decode is gated by the
-  captcha check, it may not be possible from a server.
+- Built 2026-10-21 from a 2026-10-20 capture of afropari.com (partner 300) that holds the real decode request AND response
+  (`GetCoupon`, code 3MHAE), the price refresh (`UpdateCoupon`) and the create (`SaveCoupon`, returned `3MHAE`). Standalone file.
+- Replayed through the code with mocked network calls: decode of the captured response, and a create body identical to the
+  captured one (single pick, `Vid 0`). Not run against the live site.
+- Captured pick is an outright (no away team, non-zero `PlayerId`), so decode keeps picks without an away team and create
+  carries each pick's own `PlayerId` (packed in `rawSpecifier` as `p=<Param>;k=<Kind>;pl=<PlayerId>`).
+- NOT captured: a multi-pick create on Afropari. `Vid 1` for more than one pick comes from the Betwinner/Paripesa captures;
+  confirm on the first real multi-pick split. Football 1X2 / Totals wording is the engine's, not seen on Afropari itself.
+- The refresh `Group` was 806 (2026-10-14) and 2470 (2026-10-20), matching the `x-dt` response header each time, so the adapter
+  uses the latest `x-dt` it sees and falls back to 2470. The refresh is best-effort.
+- Sends `x-app-n` / `x-svc-source` (`__BETTING_APP__`) as the capture does. Does not send `x-hd` or cookies. If the site rejects
+  server requests the log shows `[afropari <path>] non-OK`; a refused create logs the site's own Error/ErrorCode.
+- Splitter: creates are queued one at a time inside this file (precaution after a Paripesa split created only its first code).
+- Not a Converter target (no Afropari match feed captured). Not in Vault result checking.
 
 ### 22bet (`lib/services/twentytwobet.ts`)
 - Decode NOT implemented: the capture has no decode request. Reports "unsupported".

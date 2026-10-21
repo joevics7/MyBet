@@ -17,7 +17,7 @@ import {
 import { decodeBet9jaCode } from './bet9ja';
 import { decodeBangbetCode, encodeBangbetSlip } from './bangbet';
 import { decodeBetwinnerCode, encodeBetwinnerSlip } from './betwinner';
-import { decodeAfropariCode } from './afropari';
+import { decodeAfropariCode, encodeAfropariSlip } from './afropari';
 import { decodeParipesaCode, encodeParipesaSlip } from './paripesa';
 import { decode1xbetCode } from './onexbet';
 import { decode22betCode, encode22betSlip } from './twentytwobet';
@@ -109,9 +109,10 @@ export const PLATFORMS: PlatformAdapter[] = [
     canSettle: false,
     verified: false,
   },
-  // Afropari: decode NOT implemented. The research has no decode or create request (the lookup sits behind
-  // a captcha/fingerprint check), so it reports "unsupported" rather than assuming another site's calls.
-  { slug: 'afropari', label: 'Afropari', decode: decodeAfropariCode, canSettle: false, verified: false },
+  // Afropari (afropari.com, partner 300): own file (lib/services/afropari.ts), built from a 2026-10-20 capture that holds
+  // GetCoupon (decode request AND response), UpdateCoupon and SaveCoupon (single pick). Create only for slips decoded
+  // from Afropari (the Splitter); not a Converter target. NOT yet run live.
+  { slug: 'afropari', label: 'Afropari', decode: decodeAfropariCode, encode: encodeAfropariSlip, canSettle: false, verified: false },
   // 22bet NG: decode NOT implemented (no decode request in the research). Create is built from its capture
   // (own path, /LiveUtil/SaveCoupon) but needs 22bet's own match ids, so it is unreachable until decode exists.
   { slug: '22bet', label: '22bet', decode: decode22betCode, encode: encode22betSlip, canSettle: false, verified: false },
