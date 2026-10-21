@@ -19,7 +19,7 @@ import { decodeBangbetCode, encodeBangbetSlip } from './bangbet';
 import { decodeBetwinnerCode, encodeBetwinnerSlip } from './betwinner';
 import { decodeAfropariCode, encodeAfropariSlip } from './afropari';
 import { decodeParipesaCode, encodeParipesaSlip } from './paripesa';
-import { decode1xbetCode } from './onexbet';
+import { decode1xbetCode, encode1xbetSlip } from './onexbet';
 import { decode22betCode, encode22betSlip } from './twentytwobet';
 import { decodeFootballcomCode, encodeFootballcomSlip } from './footballcom';
 import { decodeHelabetCode, encodeHelabetSlip } from './helabet';
@@ -116,9 +116,10 @@ export const PLATFORMS: PlatformAdapter[] = [
   // 22bet NG: decode NOT implemented (no decode request in the research). Create is built from its capture
   // (own path, /LiveUtil/SaveCoupon) but needs 22bet's own match ids, so it is unreachable until decode exists.
   { slug: '22bet', label: '22bet', decode: decode22betCode, encode: encode22betSlip, canSettle: false, verified: false },
-  // 1xBet NG: decode only, own file (lib/services/onexbet.ts), from a real capture (decode request AND response).
-  // No create call in the capture, so no encode. NOT run live.
-  { slug: '1xbet', label: '1xBet', decode: decode1xbetCode, canSettle: false, verified: false, deepLink: 'https://1xbet.ng/en?coupon-code={code}' },
+  // 1xBet NG: own file (lib/services/onexbet.ts). Decode from a real capture; create added 2026-10-21 from a 2026-10-20
+  // capture (UpdateCoupon + SaveCoupon, code V8U1E, single pre-match football pick). Create only for slips decoded from 1xBet
+  // (the Splitter); not a Converter target. NOT run live.
+  { slug: '1xbet', label: '1xBet', decode: decode1xbetCode, encode: encode1xbetSlip, canSettle: false, verified: false, deepLink: 'https://1xbet.ng/en?coupon-code={code}' },
   // Paripesa NG (the "Parissa" research file): own file (lib/services/paripesa.ts). Create captured for real
   // (code 238NQ); decode request captured but its response is not in the file, so the response shape is assumed
   // from the Betwinner/Helabet captures -- UNCONFIRMED. NOT run live.

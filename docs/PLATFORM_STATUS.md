@@ -17,7 +17,7 @@ The four xBet-engine sites decode without the `x-hd` token, so the bot-protectio
 | Football.com | yes (fixed 2026-10-14) | yes | yes | yes | yes | Decode fixed against a real capture, not yet run live |
 | Betway | yes | yes | no | yes | yes | Tested 2026-10-10, works |
 | Bangbet | yes | yes (untested) | no | yes | no | Decode tested; rebuilt 2026-10-14 from captures, needs a retest |
-| 1xBet | yes (captured) | no | no | yes | no | Own file, decode only (capture has no create call). Not run live |
+| 1xBet | yes (captured) | yes (single pick captured) | no | yes | no | Own file; create added 2026-10-21 from a 2026-10-20 capture (UpdateCoupon, SaveCoupon, GetCoupon). Cloudflare in front. Not run live |
 | Paripesa | assumed response | yes (captured) | no | yes | no | Own file; create captured (code 238NQ), decode response not in the file. Not run live |
 | Betwinner | yes (captured) | yes (captured) | no | yes | no | Own file, fully captured (decode response + create, pre-match). Not run live |
 | Helabet | yes (captured) | yes (captured) | no | yes | no | Own file; captured on live basketball picks. Not run live |
@@ -60,12 +60,16 @@ Bet9ja (hide it from the pickers via `PICKER_EXCLUDED` in `lib/telegram/menus.ts
 - Not covered: odds comparison feed, Predictor codes, Vault result checking.
 
 ### 1xBet (`lib/services/onexbet.ts`)
-- Standalone, decode only. From a real capture of 1xbet.ng: GetCoupon request and response (partner 159) on three
-  pre-match basketball picks (`Kind` 3), plus UpdateCoupon (group 412, country 132, currency 115). Replayed
-  response decodes to the captured total (5.95).
-- No create call in the capture, so no encode. Needs a capture of 1xBet's own SaveCoupon before create can be added.
-- Opens codes at `https://1xbet.ng/en?coupon-code=<code>` (deep link). Football picks are untested here; basketball
-  totals show in the site's own wording and are unscored. Same `x-hd` risk: not sent. Not a Converter target.
+- Decode and create. Create added 2026-10-21 from a 2026-10-20 capture of 1xbet.ng (partner 159) holding, for one pre-match
+  football pick (1X2 W2, Kind 3): UpdateCoupon, SaveCoupon (returned `V8U1E`) and the GetCoupon of that code.
+- Replayed through the code with mocked network calls: the decode of the captured response, and UpdateCoupon and SaveCoupon
+  bodies identical to the captured ones. Not run against the live site. Live test 2026-10-21: decode did not work from the server;
+  1xbet.ng is behind Cloudflare (the capture had `cf_clearance`), so look for `[1xbet <path>] non-OK` in the logs.
+- Now sends `x-app-n` / `x-svc-source` (`__BETTING_APP__`) as the capture does (the old decode did not). Still no `x-hd` or cookies.
+- NOT captured: a multi-pick create. `Vid 1` for more than one pick comes from the Betwinner/Paripesa captures; confirm on the
+  first multi-pick split. Refresh `Group` follows the `x-dt` response header (412 in the capture).
+- Create only for slips decoded from 1xBet (own numeric GameId). Not a Converter target (no 1xBet match feed captured).
+- Creates are queued one at a time inside this file for the Splitter (precaution).
 
 ### Paripesa (`lib/services/paripesa.ts`)
 - The research file is named `parissa.txt`; the site is `paripesa.ng` (partner 188). Standalone file.
