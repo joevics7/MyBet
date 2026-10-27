@@ -92,7 +92,11 @@ export async function fetchTeamRecentForm(teamId: number, limit = 10, historyOnl
   const stored = await lookupForm(teamId, limit, 'footballdata');
   if (stored) return stored;
   if (historyOnly) return [];
+  return fetchTeamLastResults(teamId, limit);
+}
 
+// One request: the team's last finished matches (the top-up cron and the Decoder fallback both use this).
+export async function fetchTeamLastResults(teamId: number, limit = 10): Promise<TeamMatchResult[]> {
   const data = await fdFetch<{ matches: FdMatch[] }>(
     `/teams/${teamId}/matches?status=FINISHED&limit=${limit}`,
   );

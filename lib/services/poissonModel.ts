@@ -39,9 +39,13 @@ export const DEFAULT_LEAGUE_AVERAGES: LeagueAverages = {
 };
 
 // Minimum matches before we trust a team's computed strength at all.
-// Below this, the Confidence Engine should report "not enough data"
-// rather than a score built on 2 games.
-export const MIN_SAMPLE_SIZE = 5;
+// Below this, the Confidence Engine reports "not enough data" rather than a score built on 1-2 games.
+export const MIN_SAMPLE_SIZE = 3;
+// With fewer than FULL_SAMPLE_SIZE games a team's strength is pulled toward the league average (see
+// computeTeamStrength), so 3-4 games give a cautious estimate instead of an extreme one.
+export const FULL_SAMPLE_SIZE = 8;
+// Below this many stored results a team is worth a last-10 top-up request (the history alone is thin).
+export const TOPUP_BELOW = 5;
 
 export function computeTeamStrength(
   matches: TeamMatchResult[],
@@ -63,11 +67,16 @@ export function computeTeamStrength(
   const overallFor = avg(matches.map((m) => m.goalsFor)) ?? leagueAvg.avgHomeGoals;
   const overallAgainst = avg(matches.map((m) => m.goalsAgainst)) ?? leagueAvg.avgAwayGoals;
 
+  // Thin samples are shrunk toward 1.0 (= league average): weight n/8 on the team's own numbers below 8 games, none above.
+  // Continuous at 8, so well-sampled teams are unchanged.
+  const w = Math.min(1, matches.length / FULL_SAMPLE_SIZE);
+  const shrink = (ratio: number) => w * ratio + (1 - w) * 1;
+
   return {
-    attackHome: (homeGoalsFor ?? overallFor) / leagueAvg.avgHomeGoals,
-    attackAway: (awayGoalsFor ?? overallFor) / leagueAvg.avgAwayGoals,
-    defenseHome: (homeGoalsAgainst ?? overallAgainst) / leagueAvg.avgAwayGoals,
-    defenseAway: (awayGoalsAgainst ?? overallAgainst) / leagueAvg.avgHomeGoals,
+    attackHome: shrink((homeGoalsFor ?? overallFor) / leagueAvg.avgHomeGoals),
+    attackAway: shrink((awayGoalsFor ?? overallFor) / leagueAvg.avgAwayGoals),
+    defenseHome: shrink((homeGoalsAgainst ?? overallAgainst) / leagueAvg.avgAwayGoals),
+    defenseAway: shrink((awayGoalsAgainst ?? overallAgainst) / leagueAvg.avgHomeGoals),
     sampleSize: matches.length,
   };
 }
