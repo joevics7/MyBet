@@ -160,7 +160,26 @@ const toEvent = (s: EncodeSelectionInput, coef: number) => {
   };
 };
 
+// The Splitter used to start every group's create at once, and Paripesa gave a code to the first slip only.
+// Run creates one at a time here (and again in the Splitter route), and retry a failed save once.
+let queue: Promise<unknown> = Promise.resolve();
+function oneAtATime<T>(task: () => Promise<T>): Promise<T> {
+  const run = queue.then(task, task);
+  queue = run.catch(() => undefined);
+  return run;
+}
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export async function encodeParipesaSlip(selections: EncodeSelectionInput[]): Promise<EncodeResult> {
+  return oneAtATime(async () => {
+    const first = await createCode(selections);
+    if (first.shareCode) return first;
+    await sleep(700);
+    return createCode(selections);
+  });
+}
+
+async function createCode(selections: EncodeSelectionInput[]): Promise<EncodeResult> {
   if (selections.length === 0) return { status: 'failed', shareCode: null };
   if (selections.some((s) => !/^\d+$/.test(s.externalEventId) || !/^\d+$/.test(s.outcomeId) || !(Number(s.odds) > 0))) {
     console.error('[paripesa encode] picks must come from a decode on this site (numeric GameId, Type, odds)');

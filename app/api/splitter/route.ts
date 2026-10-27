@@ -90,18 +90,24 @@ export async function POST(req: NextRequest) {
   // its top comment in sportybet.ts. A selection missing its raw fields
   // (shouldn't happen for SportyBet decodes, but defensive) is skipped
   // from the encode call entirely rather than sent with blank/wrong IDs.
-  const groupsWithCodes = await Promise.all(
-    groups.map(async (group) => {
-      // Platforms without a create endpoint (Bangbet, Bet9ja) return the
-      // split as a pick list with confidence; the user re-enters it by hand.
-      if (!adapter.encode) return { ...group, generatedCode: null, deepLink: null };
-
-      const encodable = group.selections.filter((s) => s.rawMarketId && s.rawOutcomeId);
-      if (encodable.length !== group.selections.length) {
-        return { ...group, generatedCode: null, deepLink: null };
-      }
-
-      const encodeResult = await adapter.encode!(
+  // One group at a time: starting every create at once made some platforms (Paripesa first) return a
+  // code for the first slip only.
+  const groupsWithCodes = [];
+  for (const group of groups) {
+    // Platforms without a create endpoint (Bangbet, Bet9ja) return the
+    // split as a pick list with confidence; the user re-enters it by hand.
+    if (!adapter.encode) {
+      groupsWithCodes.push({ ...group, generatedCode: null, deepLink: null });
+      continue;
+    }
+    const encodable = group.selections.filter((s) => s.rawMarketId && s.rawOutcomeId);
+    if (encodable.length !== group.selections.length) {
+      groupsWithCodes.push({ ...group, generatedCode: null, deepLink: null });
+      continue;
+    }
+    let shareCode: string | null = null;
+    try {
+      const encodeResult = await adapter.encode(
         encodable.map((s) => ({
           externalEventId: s.externalEventId,
           marketId: s.rawMarketId!,
@@ -110,13 +116,16 @@ export async function POST(req: NextRequest) {
           odds: s.odds,
         })),
       );
-      return {
-        ...group,
-        generatedCode: encodeResult.shareCode,
-        deepLink: encodeResult.shareCode ? deepLinkFor(adapter.slug, encodeResult.shareCode) : null,
-      };
-    }),
-  );
+      shareCode = encodeResult.shareCode;
+    } catch (err) {
+      console.error('[splitter] encode threw for group', group.label, err);
+    }
+    groupsWithCodes.push({
+      ...group,
+      generatedCode: shareCode,
+      deepLink: shareCode ? deepLinkFor(adapter.slug, shareCode) : null,
+    });
+  }
 
   return NextResponse.json({
     status: 'ok',
