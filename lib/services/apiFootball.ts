@@ -17,8 +17,11 @@ import type { FdMatch } from './footballData';
 
 const BASE_URL = 'https://v3.football.api-sports.io';
 
+// A suspended account answers every call with an error, so once seen it is switched off for the life of this instance
+// (no more doomed requests; a redeploy or restart tries again).
+let suspended = false;
 export function isApiFootballConfigured(): boolean {
-  return !!process.env.API_FOOTBALL_KEY;
+  return !!process.env.API_FOOTBALL_KEY && !suspended;
 }
 
 type Json = Record<string, any>;
@@ -39,7 +42,11 @@ async function apiFetch<T = Json[]>(path: string, revalidate: number): Promise<T
   const json = (await res.json()) as Json;
   const errs = json.errors;
   const hasErrors = Array.isArray(errs) ? errs.length > 0 : errs && Object.keys(errs).length > 0;
-  if (hasErrors) throw new Error(`API-Football error: ${JSON.stringify(errs).slice(0, 300)}`);
+  if (hasErrors) {
+    const text = JSON.stringify(errs);
+    if (/suspended/i.test(text)) suspended = true;
+    throw new Error(`API-Football error: ${text.slice(0, 300)}`);
+  }
 
   const remaining = res.headers.get('x-ratelimit-requests-remaining');
   if (remaining !== null && Number(remaining) < 10) {

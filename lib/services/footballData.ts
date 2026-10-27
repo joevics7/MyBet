@@ -4,6 +4,7 @@
 // Docs: https://docs.football-data.org/general/v4/
 
 import type { TeamMatchResult } from './poissonModel';
+import { lookupForm, type StoredResult } from './formHistory';
 
 const BASE_URL = 'https://api.football-data.org/v4';
 
@@ -85,7 +86,13 @@ export async function fetchMatchesByDateRange(dateFrom: string, dateTo: string):
 // Recent finished matches for a team, used to compute attack/defense
 // strength. `limit` defaults to a reasonable form window -- more than
 // this starts including form that's no longer very predictive.
-export async function fetchTeamRecentForm(teamId: number, limit = 10): Promise<TeamMatchResult[]> {
+export async function fetchTeamRecentForm(teamId: number, limit = 10, historyOnly = false): Promise<TeamMatchResult[]> {
+  // Preferred: stored finished matches (one request fills ~9 days for every team). The per-team request below (10/min
+  // on the free tier) is only for the Decoder while the history is not ready; historyOnly (the Predictor) never makes it.
+  const stored = await lookupForm(teamId, limit, 'footballdata');
+  if (stored) return stored;
+  if (historyOnly) return [];
+
   const data = await fdFetch<{ matches: FdMatch[] }>(
     `/teams/${teamId}/matches?status=FINISHED&limit=${limit}`,
   );
@@ -98,4 +105,27 @@ export async function fetchTeamRecentForm(teamId: number, limit = 10): Promise<T
       const goalsAgainst = isHome ? m.score.fullTime.away! : m.score.fullTime.home!;
       return { goalsFor, goalsAgainst, isHome };
     });
+}
+
+// Finished matches of the 12 free competitions over a date range (max 10 days), grouped by UTC day as
+// [homeTeamId, awayTeamId, homeGoals, awayGoals]. ONE request, instead of one per team.
+export function bucketFinished(matches: FdMatch[], days: Set<string>): Map<string, StoredResult[]> {
+  const byDay = new Map<string, StoredResult[]>();
+  for (const m of matches) {
+    if (m.status !== 'FINISHED' || m.score.fullTime.home == null || m.score.fullTime.away == null) continue;
+    const day = m.utcDate.slice(0, 10);
+    if (!days.has(day)) continue;
+    const list = byDay.get(day) ?? [];
+    list.push([m.homeTeam.id, m.awayTeam.id, m.score.fullTime.home, m.score.fullTime.away]);
+    byDay.set(day, list);
+  }
+  return byDay;
+}
+
+export async function fetchFinishedRange(from: string, to: string): Promise<Map<string, StoredResult[]>> {
+  const end = new Date(Date.parse(to) + 86400000).toISOString().slice(0, 10); // dateTo is exclusive of late kick-offs; one extra day, then filter by day
+  const data = await fdFetch<{ matches: FdMatch[] }>(`/matches?dateFrom=${from}&dateTo=${end}&status=FINISHED`);
+  const wanted = new Set<string>();
+  for (let t = Date.parse(from); t <= Date.parse(to); t += 86400000) wanted.add(new Date(t).toISOString().slice(0, 10));
+  return bucketFinished(data.matches, wanted);
 }

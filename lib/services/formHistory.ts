@@ -33,15 +33,18 @@ interface Index {
   coveredDays: number;
   byTeam: Map<number, TeamMatchResult[]>; // most recent first
 }
-let cache: { at: number; index: Index | null } | null = null;
+export type HistoryProvider = 'apifootball' | 'footballdata'; // team ids differ between them, so each has its own stored days
+const caches = new Map<HistoryProvider, { at: number; index: Index | null }>();
 
-async function loadIndex(): Promise<Index | null> {
-  if (cache && Date.now() - cache.at < (cache.index ? INDEX_TTL_MS : FAILED_TTL_MS)) return cache.index;
+async function loadIndex(provider: HistoryProvider = 'apifootball'): Promise<Index | null> {
+  const hit = caches.get(provider);
+  if (hit && Date.now() - hit.at < (hit.index ? INDEX_TTL_MS : FAILED_TTL_MS)) return hit.index;
   try {
     const days = windowDays();
     const { data, error } = await getSupabaseAdmin()
       .from('football_results_by_day')
       .select('day, results')
+      .eq('provider', provider)
       .gte('day', days[days.length - 1])
       .lte('day', days[0])
       .order('day', { ascending: false });
@@ -59,12 +62,12 @@ async function loadIndex(): Promise<Index | null> {
         push(away, { goalsFor: ag, goalsAgainst: hg, isHome: false });
       }
     }
-    cache = { at: Date.now(), index: { coveredDays: data?.length ?? 0, byTeam } };
+    caches.set(provider, { at: Date.now(), index: { coveredDays: data?.length ?? 0, byTeam } });
   } catch (err) {
     console.error('[formHistory] could not load stored results (table missing or Supabase down?):', err);
-    cache = { at: Date.now(), index: null };
+    caches.set(provider, { at: Date.now(), index: null });
   }
-  return cache.index;
+  return caches.get(provider)!.index;
 }
 
 // ---- Top-ups: last-10 results fetched per team, only for teams the 35-day history cannot cover --------------------------
@@ -106,8 +109,8 @@ export async function teamsNeedingTopup(teamIds: number[]): Promise<number[]> {
 }
 
 // Recent results for a team (most recent first), or null when no stored data can answer yet.
-export async function lookupForm(teamId: number, limit = 10): Promise<TeamMatchResult[] | null> {
-  const [index, topups] = await Promise.all([loadIndex(), loadTopups()]);
+export async function lookupForm(teamId: number, limit = 10, provider: HistoryProvider = 'apifootball'): Promise<TeamMatchResult[] | null> {
+  const [index, topups] = await Promise.all([loadIndex(provider), provider === 'apifootball' ? loadTopups() : Promise.resolve(new Map<number, TeamMatchResult[]>())]);
   const topup = topups.get(teamId);
   const historyReady = !!index && index.coveredDays >= MIN_DAYS_TO_USE;
   const own = historyReady ? index!.byTeam.get(teamId) ?? [] : [];
@@ -130,10 +133,11 @@ export interface HistoryReport {
 export async function ensureHistory(
   fetchDay: (day: string) => Promise<StoredResult[]>,
   maxNewDays: number,
+  provider: HistoryProvider = 'apifootball',
 ): Promise<HistoryReport> {
   const admin = getSupabaseAdmin();
   const days = windowDays();
-  const { data, error } = await admin.from('football_results_by_day').select('day').gte('day', days[days.length - 1]).lte('day', days[0]);
+  const { data, error } = await admin.from('football_results_by_day').select('day').eq('provider', provider).gte('day', days[days.length - 1]).lte('day', days[0]);
   if (error) {
     return { stored: 0, missing: days.length, fetchedNow: 0, ready: false, stopped: `table not readable: ${error.message}` };
   }
@@ -147,7 +151,7 @@ export async function ensureHistory(
       const results = await fetchDay(day);
       const { error: upErr } = await admin
         .from('football_results_by_day')
-        .upsert({ day, results, match_count: results.length, fetched_at: new Date().toISOString() });
+        .upsert({ day, provider, results, match_count: results.length, fetched_at: new Date().toISOString() }, { onConflict: 'day,provider' });
       if (upErr) throw new Error(upErr.message);
       fetchedNow++;
     } catch (err) {
@@ -156,8 +160,61 @@ export async function ensureHistory(
       break; // a rate-limit or quota error: do not keep hammering
     }
   }
-  if (fetchedNow > 0) cache = null;
+  if (fetchedNow > 0) caches.delete(provider);
 
   const stored = have.size + fetchedNow;
   return { stored, missing: days.length - stored, fetchedNow, ready: stored >= MIN_DAYS_TO_USE, ...(stopped ? { stopped } : {}) };
+}
+
+// ---- Range fetchers (football-data.org): ONE request returns several days, split here into per-day rows ----------------
+export const RANGE_BLOCK_DAYS = 9; // football-data.org allows a 10-day range; the request adds one extra day at the end
+
+// Blocks of consecutive window days (newest first) that still have at least one missing day. Pure.
+export function planBlocks(days: string[], have: Set<string>, blockSize = RANGE_BLOCK_DAYS): { days: string[]; from: string; to: string }[] {
+  const blocks: { days: string[]; from: string; to: string }[] = [];
+  for (let i = 0; i < days.length; i += blockSize) {
+    const block = days.slice(i, i + blockSize);
+    if (block.every((d) => have.has(d))) continue;
+    blocks.push({ days: block, from: block[block.length - 1], to: block[0] });
+  }
+  return blocks;
+}
+
+export async function ensureHistoryByRange(
+  fetchRange: (from: string, to: string) => Promise<Map<string, StoredResult[]>>,
+  maxRequests: number,
+  provider: HistoryProvider,
+): Promise<HistoryReport & { requests: number }> {
+  const admin = getSupabaseAdmin();
+  const days = windowDays();
+  const { data, error } = await admin.from('football_results_by_day').select('day').eq('provider', provider).gte('day', days[days.length - 1]).lte('day', days[0]);
+  if (error) return { stored: 0, missing: days.length, fetchedNow: 0, ready: false, requests: 0, stopped: `table not readable: ${error.message}` };
+  const have = new Set((data ?? []).map((r) => String(r.day)));
+
+  let fetchedNow = 0;
+  let requests = 0;
+  let stopped: string | undefined;
+  for (const block of planBlocks(days, have).slice(0, Math.max(0, maxRequests))) {
+    try {
+      requests++;
+      const byDay = await fetchRange(block.from, block.to);
+      const rows = block.days
+        .filter((d) => !have.has(d))
+        .map((day) => {
+          const results = byDay.get(day) ?? []; // a day with no finished matches is still a (complete) day
+          return { day, provider, results, match_count: results.length, fetched_at: new Date().toISOString() };
+        });
+      const { error: upErr } = await admin.from('football_results_by_day').upsert(rows, { onConflict: 'day,provider' });
+      if (upErr) throw new Error(upErr.message);
+      fetchedNow += rows.length;
+      rows.forEach((r) => have.add(r.day));
+    } catch (err) {
+      stopped = err instanceof Error ? err.message : String(err);
+      console.error('[formHistory] range fetch stopped', block.from, block.to, err);
+      break;
+    }
+  }
+  if (fetchedNow > 0) caches.delete(provider);
+  const stored = have.size;
+  return { stored, missing: days.length - stored, fetchedNow, requests, ready: stored >= MIN_DAYS_TO_USE, ...(stopped ? { stopped } : {}) };
 }

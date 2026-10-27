@@ -27,7 +27,6 @@ import type { CandidateSelection } from '@/lib/services/predictorSelection';
 
 export const FIXTURE_WINDOW_DAYS = 2;
 export const MAX_GAMES_PER_RUN = 45; // analysed per set: the funnel (shortlist.ts) picks the 45 best-covered games of the day
-const FD_REQUEST_BUDGET_GAMES = 5; // football-data.org allows 10 requests/min; each game costs 2
 const CONCURRENCY = 4;
 const SCAN_BUDGET_MS = 25000; // both sets scan in parallel; leaves the rest of the 60s for analysis, saving and codes
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -145,7 +144,6 @@ async function fromBookmaker(started: number): Promise<Collected | null> {
   const candidates: CandidateSelection[] = [];
   const providers = (stats.providers = newProviderStats());
   const registry: TeamRegistry | undefined = await loadTeamRegistry().catch(() => undefined);
-  const fdBudget = { left: FD_REQUEST_BUDGET_GAMES * 2 };
   const sources = await loadSources();
   // The funnel: games covered by the most tipster sites first; analysis stops once MAX_GAMES_PER_RUN games are analysed.
   const ranked = rankByCoverage(games.map((g) => ({ ...g, kickoff: g.kickoff })), sources);
@@ -158,7 +156,7 @@ async function fromBookmaker(started: number): Promise<Collected | null> {
       if (!fixture) return void stats.notCovered++;
       stats.gamesScanned++;
       bump(providers.fixturesFrom, fixture.provider);
-      const res = await probabilitiesWithFallback(g, fixture, MODEL_LINES, registry, undefined, fdBudget);
+      const res = await probabilitiesWithFallback(g, fixture, MODEL_LINES, registry);
       if (!res.ok) {
         providers.lastFormProblem = res.message;
         return void (res.reason === 'error' ? stats.failed++ : stats.insufficientData++);
@@ -223,7 +221,6 @@ async function fromFixtures(started: number): Promise<Collected> {
   }
   if (!useAf && providers.footballDataConfigured) fixtures = await fdFetchRange(dateFrom, dateTo);
   const registry: TeamRegistry | undefined = await loadTeamRegistry().catch(() => undefined);
-  const fdBudget = { left: FD_REQUEST_BUDGET_GAMES * 2 };
   const sources = await loadSources();
   const upcoming = Array.from(new Map(fixtures.map((f) => [f.id, f])).values())
     .filter((f) => (f.status === 'SCHEDULED' || f.status === 'TIMED') && !LOW_SIGNAL.test(`${f.homeTeam.name} ${f.awayTeam.name} ${f.competition.name}`));
@@ -247,7 +244,7 @@ async function fromFixtures(started: number): Promise<Collected> {
       const res = await probabilitiesWithFallback(
         { home: f.homeTeam.name, away: f.awayTeam.name, kickoff: f.utcDate },
         { provider: useAf ? 'apifootball' : 'footballdata', homeTeamId: f.homeTeam.id, awayTeamId: f.awayTeam.id },
-        MODEL_LINES, registry, undefined, fdBudget,
+        MODEL_LINES, registry,
       );
       if (!res.ok) {
         providers.lastFormProblem = res.message;
