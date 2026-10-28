@@ -31,12 +31,23 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 type Json = Record<string, any>;
 
-async function post(path: string, body: unknown): Promise<{ status: number; json: Json | null }> {
+// Betway moved its live code-creation call to /bet-api-sr02/ and now sends the full pick (event + market + outcome,
+// stake 100, payment 1, selected) plus its brand id header. Decode keeps working on the older path.
+const BASE_V2 = 'https://www.betway.com.ng/appsynapse/bet-api-sr02';
+const BRAND_ID = 'f8a8d16a-d619-4b49-aa8c-f21211403c92'; // public site constant, sent as x-brand-id by the web app
+const BOOK_HEADERS = {
+  ...HEADERS,
+  'x-brand-id': BRAND_ID,
+  Origin: 'https://www.betway.com.ng',
+  Referer: 'https://www.betway.com.ng/sport/soccer',
+};
+
+async function post(path: string, body: unknown, opts?: { base?: string; headers?: Record<string, string> }): Promise<{ status: number; json: Json | null }> {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const res = await fetch(`${BASE}${path}`, {
+      const res = await fetch(`${opts?.base ?? BASE}${path}`, {
         method: 'POST',
-        headers: HEADERS,
+        headers: opts?.headers ?? HEADERS,
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(8000),
       });
@@ -136,12 +147,27 @@ export async function encodeBetwaySlip(selections: EncodeSelectionInput[]): Prom
     return { status: 'failed', shareCode: null };
   }
 
-  const { status, json } = await post('/v1/Betting/BookABet', {
-    cultureCode: 'en-US',
-    countryCode: 'NG',
-    isSingleBet: selections.length === 1,
-    outcomes: selections.map((s) => ({ outcomeId: s.outcomeId })),
-  });
+  const flags = {
+    value: 100, payment: 1, selected: true, canPlaceSportsBonusBet: false, isSportBonusAllowed: false,
+    meetsMinSportsBonusOdds: false, isStartingPrice: false, isBetwayBoosted: false,
+    isFirst: false, isLast: false, isLinkedFirst: false, isLinkedLast: false,
+  };
+  const { status, json } = await post(
+    '/v1/Betting/BookABet',
+    {
+      cultureCode: 'en-US',
+      countryCode: 'NG',
+      isSingleBet: selections.length === 1,
+      isBuildABet: false,
+      outcomes: selections.map((s) => ({
+        outcomeId: s.outcomeId,
+        eventId: Number(s.externalEventId),
+        marketId: s.marketId,
+        ...flags,
+      })),
+    },
+    { base: BASE_V2, headers: BOOK_HEADERS },
+  );
   if (status !== 200 || !json?.bookingCode) {
     console.error('[betway encode] failed:', status, JSON.stringify(json)?.slice(0, 300));
     return { status: 'failed', shareCode: null };
