@@ -22,6 +22,12 @@ export const MAX_LEGS = 20;
 const FAMILY = new Set(['sportybet', 'footballcom', 'msport']); // shared Sportradar ids
 // Sites on the same 1xBet-style engine (GameId / GroupId / Type). Their ids are assumed to match across sites,
 // so a slip moves between them as-is. EXPERIMENTAL: added 2026-10-28 for testing, not yet confirmed live.
+// Sportradar hub: Bangbet uses the same "sr:match:" game ids and market/outcome ids as the SportyBet family, so a slip
+// moves between all four as-is, and a pick from any other platform is matched ONCE (by team names + kickoff, against
+// SportyBet's feed) and the resulting Sportradar ids work on every one of them.
+const SR_FAMILY = new Set(['sportybet', 'footballcom', 'msport', 'bangbet']);
+// Bangbet writes "total=2.5&", the others "total=2.5".
+const cleanSpec = (v?: string) => (v ? v.split('&').map((x) => x.trim()).filter(Boolean).join('&') || undefined : undefined);
 const XBET_FAMILY = new Set(['1xbet', 'paripesa', 'melbet', 'betwinner', 'helabet', 'afropari', '22bet']);
 
 export interface ConvertOptions {
@@ -154,7 +160,7 @@ export async function convertSlip(opts: ConvertOptions, scorer: Scorer = default
   const toResolve: number[] = [];
   for (const i of live) {
     const s = sels[i];
-    const sameFamily = FAMILY.has(source.slug) && FAMILY.has(target.slug);
+    const sameFamily = SR_FAMILY.has(source.slug) && SR_FAMILY.has(target.slug);
     const sameXbet = XBET_FAMILY.has(source.slug) && XBET_FAMILY.has(target.slug);
     if (sameXbet && s.rawMarketId && s.rawOutcomeId && /^\d+$/.test(s.externalEventId)) {
       inputs.set(i, {
@@ -163,7 +169,7 @@ export async function convertSlip(opts: ConvertOptions, scorer: Scorer = default
       });
     } else if (sameFamily && s.rawMarketId && s.rawOutcomeId && s.externalEventId.startsWith('sr:match:')) {
       inputs.set(i, {
-        input: { externalEventId: s.externalEventId, marketId: s.rawMarketId, outcomeId: s.rawOutcomeId, specifier: s.rawSpecifier },
+        input: { externalEventId: s.externalEventId, marketId: s.rawMarketId, outcomeId: s.rawOutcomeId, specifier: cleanSpec(s.rawSpecifier) },
         targetOdds: null,
       });
     } else {
@@ -175,7 +181,7 @@ export async function convertSlip(opts: ConvertOptions, scorer: Scorer = default
     const legs = toResolve.map((i) => ({ leg: sels[i], selector: selectors[i] }));
     let resolved: Resolution[];
     try {
-      if (FAMILY.has(target.slug)) resolved = await resolveForSportyFamily(legs);
+      if (SR_FAMILY.has(target.slug)) resolved = await resolveForSportyFamily(legs);
       else if (target.slug === 'betway') resolved = await resolveForBetway(legs);
       else {
         // No game lookup exists for this target yet (needs a capture of its match list).
