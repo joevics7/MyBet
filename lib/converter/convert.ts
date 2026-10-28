@@ -20,6 +20,9 @@ import { resolveForBetway, resolveForSportyFamily, type Resolution } from './res
 
 export const MAX_LEGS = 20;
 const FAMILY = new Set(['sportybet', 'footballcom', 'msport']); // shared Sportradar ids
+// Sites on the same 1xBet-style engine (GameId / GroupId / Type). Their ids are assumed to match across sites,
+// so a slip moves between them as-is. EXPERIMENTAL: added 2026-10-28 for testing, not yet confirmed live.
+const XBET_FAMILY = new Set(['1xbet', 'paripesa', 'melbet', 'betwinner', 'helabet', 'afropari', '22bet']);
 
 export interface ConvertOptions {
   sourceSlug: string;
@@ -152,7 +155,13 @@ export async function convertSlip(opts: ConvertOptions, scorer: Scorer = default
   for (const i of live) {
     const s = sels[i];
     const sameFamily = FAMILY.has(source.slug) && FAMILY.has(target.slug);
-    if (sameFamily && s.rawMarketId && s.rawOutcomeId && s.externalEventId.startsWith('sr:match:')) {
+    const sameXbet = XBET_FAMILY.has(source.slug) && XBET_FAMILY.has(target.slug);
+    if (sameXbet && s.rawMarketId && s.rawOutcomeId && /^\d+$/.test(s.externalEventId)) {
+      inputs.set(i, {
+        input: { externalEventId: s.externalEventId, marketId: s.rawMarketId, outcomeId: s.rawOutcomeId, specifier: s.rawSpecifier, odds: s.odds },
+        targetOdds: null,
+      });
+    } else if (sameFamily && s.rawMarketId && s.rawOutcomeId && s.externalEventId.startsWith('sr:match:')) {
       inputs.set(i, {
         input: { externalEventId: s.externalEventId, marketId: s.rawMarketId, outcomeId: s.rawOutcomeId, specifier: s.rawSpecifier },
         targetOdds: null,
@@ -166,7 +175,15 @@ export async function convertSlip(opts: ConvertOptions, scorer: Scorer = default
     const legs = toResolve.map((i) => ({ leg: sels[i], selector: selectors[i] }));
     let resolved: Resolution[];
     try {
-      resolved = FAMILY.has(target.slug) ? await resolveForSportyFamily(legs) : await resolveForBetway(legs);
+      if (FAMILY.has(target.slug)) resolved = await resolveForSportyFamily(legs);
+      else if (target.slug === 'betway') resolved = await resolveForBetway(legs);
+      else {
+        // No game lookup exists for this target yet (needs a capture of its match list).
+        const why = XBET_FAMILY.has(target.slug)
+          ? `${target.label} only takes slips from 1xBet-style sites (1xBet, Paripesa, Melbet, Betwinner, Helabet, Afropari) for now`
+          : `Matching games on ${target.label} isn't built yet`;
+        resolved = legs.map(() => ({ ok: false as const, reason: why }));
+      }
     } catch (err) {
       console.error('[converter] resolve failed:', err);
       resolved = legs.map(() => ({ ok: false as const, reason: `Couldn't reach ${target.label} to match this game` }));

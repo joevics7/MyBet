@@ -26,4 +26,15 @@ export const CONVERT_TARGETS = [
   { slug: 'footballcom', label: 'Football.com' },
   { slug: 'betway', label: 'Betway' },
   { slug: 'msport', label: 'MSport' },
+  // Added 2026-10-28 so each can be tested. Not confirmed live. The 1xBet-style sites only take
+  // slips from each other; everything else says so per pick. Bet9ja and Stake have no create path.
+  { slug: 'paripesa', label: 'Paripesa' },
+  { slug: '1xbet', label: '1xBet' },
+  { slug: 'melbet', label: 'Melbet' },
+  { slug: 'betwinner', label: 'Betwinner' },
+  { slug: 'helabet', label: 'Helabet' },
+  { slug: 'afropari', label: 'Afropari' },
+  { slug: '22bet', label: '22bet' },
+  { slug: 'bangbet', label: 'Bangbet' },
+  { slug: 'betpawa', label: 'Betpawa' },
 ] as const;
