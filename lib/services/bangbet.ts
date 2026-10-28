@@ -137,8 +137,11 @@ function toIso(v: unknown): string | null {
   return null;
 }
 
+// Pre-match games use producer 3 in the 2026-10-22 captures ("3#sr:match:72036242#1#"). Create had no producer to
+// pass and used 1, so the lookup found nothing and every create failed with "pick not available".
+const DEFAULT_PRODUCER = 3;
 const roomId = (producer: unknown, eventId: string, marketId: string, specifiers: string) =>
-  `${producer ?? 1}#${eventId}#${marketId}#${specifiers}`;
+  `${producer ?? DEFAULT_PRODUCER}#${eventId}#${marketId}#${specifiers}`;
 
 // One call covers every leg. Returns eventId -> event record (kickoff, status, ids, markets).
 async function lookupEvents(
@@ -241,9 +244,14 @@ export async function encodeBangbetSlip(selections: EncodeSelectionInput[]): Pro
   if (ids.some((id) => !id.startsWith('sr:match:'))) return { status: 'failed', shareCode: null };
 
   const prepared = selections.map((s) => ({ s, spec: toBangbetSpecifiers(s.specifier) }));
-  const events = await lookupEvents(
-    prepared.map(({ s, spec }) => ({ eventId: s.externalEventId, marketId: s.marketId, specifiers: spec.specifiers })),
-  );
+  const legsFor = (producer: number, list: typeof prepared) =>
+    list.map(({ s, spec }) => ({ eventId: s.externalEventId, marketId: s.marketId, specifiers: spec.specifiers, producer }));
+  const events = await lookupEvents(legsFor(DEFAULT_PRODUCER, prepared));
+  // Any game not found under producer 3 (live games use 1): ask again with 1.
+  const missing = prepared.filter(({ s }) => !events.has(s.externalEventId));
+  if (missing.length > 0) {
+    for (const [id, ev] of await lookupEvents(legsFor(1, missing))) events.set(id, ev);
+  }
 
   const items: Json[] = [];
   for (const { s, spec } of prepared) {
@@ -252,7 +260,8 @@ export async function encodeBangbetSlip(selections: EncodeSelectionInput[]): Pro
     const market = markets.find((m) => String(m.id) === s.marketId && String(m.specifiers ?? '') === spec.specifiers);
     const outcome = (market?.outcomes ?? []).find((o: Json) => String(o.id) === s.outcomeId);
     if (!ev || !market || !outcome || market.active === false || outcome.active === false) {
-      console.error('[bangbet encode] pick not available:', s.externalEventId, s.marketId, s.outcomeId);
+      console.error('[bangbet encode] pick not available:', s.externalEventId, s.marketId, s.outcomeId, s.specifier ?? '',
+        !ev ? '(game not found by the odds lookup)' : !market ? '(market/line not found)' : !outcome ? '(outcome not found)' : '(suspended)');
       return { status: 'failed', shareCode: null };
     }
     items.push({
