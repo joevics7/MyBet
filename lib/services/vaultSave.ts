@@ -26,7 +26,16 @@ export async function saveVaultEntry(
     return { ok: false, status: 422, error: "Couldn't decode that code \u2014 check it's correct." };
   }
 
-  const { data: platformRow } = await admin.from('platforms').select('id').eq('slug', platform.slug).maybeSingle();
+  let { data: platformRow } = await admin.from('platforms').select('id').eq('slug', platform.slug).maybeSingle();
+  if (!platformRow) {
+    // The platform wasn't seeded in the database yet; add it so the entry can be re-checked later.
+    const { data: created } = await admin
+      .from('platforms')
+      .upsert({ slug: platform.slug, name: platform.label, is_supported_decode: true, is_supported_encode: !!platform.encode }, { onConflict: 'slug' })
+      .select('id')
+      .maybeSingle();
+    platformRow = created ?? null;
+  }
 
   const { error } = await admin.from('vault_entries').insert({
     tg_user_id: input.tgUserId,
@@ -47,8 +56,11 @@ export async function saveVaultEntry(
   // Be honest if this platform can't report results, so nobody waits for an
   // alert that won't come.
   const total = decoded.totalOdds ? ` @ ${decoded.totalOdds} total odds` : '';
+  const nativeResults = platform.slug === 'sportybet' || platform.slug === 'footballcom';
   const tail = platform.canSettle
-    ? "I'll message you here as soon as it settles (checked hourly)."
+    ? nativeResults
+      ? "I'll message you here as soon as it settles (checked hourly)."
+      : `I'll check ${platform.label} picks against final scores (1X2, over/under and both-teams-to-score only) and message you here when it settles (checked hourly).`
     : `Heads up: ${platform.label} doesn't report results to us yet, so I can't auto-check this one.`;
 
   return {

@@ -119,6 +119,8 @@ export interface MatchedFixture {
   awayTeamName: string;
   competitionName: string;
   confidence: number;    // 0-1, average of both teams' similarity scores
+  status?: FdMatch['status']; // for the Vault's result check
+  fullTime?: { home: number | null; away: number | null };
 }
 
 export async function findFixtureByTeamNames(
@@ -186,6 +188,8 @@ export async function findFixtureByTeamNames(
         awayTeamName: best.match.awayTeam.name,
         competitionName: best.match.competition.name,
         confidence: best.score,
+        status: best.match.status,
+        fullTime: best.match.score?.fullTime,
       };
     }
   }

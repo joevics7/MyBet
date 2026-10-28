@@ -7,6 +7,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getPlatform } from './platforms';
 import { sendMessage } from './telegram';
+import { winningByScore } from './resultFallback';
 
 export interface SettleInput {
   id: string;
@@ -36,11 +37,16 @@ export async function settleEntry(admin: SupabaseClient, entry: SettleInput): Pr
   }
 
   const legsTotal = decoded.selections.length;
-  if (!decoded.selections.every((s) => s.isWinning !== null)) {
+  // SportyBet / Football.com say per pick whether it won. For the rest, work it out from the final score.
+  const results: (boolean | null)[] = [];
+  for (const s of decoded.selections) {
+    results.push(s.isWinning !== null ? s.isWinning : await winningByScore(s));
+  }
+  if (!results.every((r) => r !== null)) {
     return { state: 'pending', legsTotal };
   }
 
-  const legsCorrect = decoded.selections.filter((s) => s.isWinning === true).length;
+  const legsCorrect = results.filter((r) => r === true).length;
   const status = legsCorrect === legsTotal ? 'won' : 'lost';
 
   // Guarded on status='pending' so two overlapping runs can't both settle

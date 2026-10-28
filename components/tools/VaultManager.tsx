@@ -3,7 +3,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Loader2, Plus, RefreshCw, LogOut, CheckCircle2, XCircle, Clock, HelpCircle, Send } from 'lucide-react';
 
-const PLATFORMS = [{ slug: 'sportybet', label: 'SportyBet' }, { slug: 'bet9ja', label: 'Bet9ja' }];
+import { PLATFORM_OPTIONS } from '@/lib/platformList';
+
+// Every platform we can read a code from (Stake needs a link, not a code, so it is left out).
+const PLATFORMS = PLATFORM_OPTIONS.filter((p) => p.slug !== 'stake');
 const POLL_INTERVAL_MS = 2000;
 
 interface VaultEntry {
