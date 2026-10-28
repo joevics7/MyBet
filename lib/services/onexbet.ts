@@ -76,7 +76,13 @@ async function post(path: string, body: unknown): Promise<Json | null> {
     if (Number.isInteger(dt) && dt > 0) currentGroup = dt;
     const text = await res.text();
     if (!res.ok) {
-      console.error('[1xbet ' + path + '] non-OK:', res.status, text.slice(0, 200));
+      // 403/429/503 or an HTML page means Cloudflare / the browser-fingerprint check stopped us, not a bad request.
+      const blocked = res.status === 403 || res.status === 429 || res.status === 503 || /^\s*</.test(text);
+      console.error('[1xbet ' + path + (blocked ? '] BLOCKED by Cloudflare/fingerprint check:' : '] non-OK:'), res.status, text.slice(0, 200));
+      return null;
+    }
+    if (/^\s*</.test(text)) {
+      console.error('[1xbet ' + path + '] BLOCKED: got an HTML page instead of JSON (Cloudflare challenge)', text.slice(0, 120));
       return null;
     }
     return JSON.parse(text) as Json;
