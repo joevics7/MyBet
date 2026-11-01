@@ -267,7 +267,7 @@ export async function encodeBangbetSlip(selections: EncodeSelectionInput[]): Pro
     items.push({
       sportId: ev.sportId ?? 'sr:sport:1',
       eventId: s.externalEventId,
-      producer: ev.producer ?? 1,
+      producer: ev.producer ?? DEFAULT_PRODUCER,
       marketId: s.marketId,
       specifiers: spec.specifiers,
       outcomeId: s.outcomeId,
