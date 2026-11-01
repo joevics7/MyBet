@@ -152,25 +152,31 @@ export async function encodeBetwaySlip(selections: EncodeSelectionInput[]): Prom
     meetsMinSportsBonusOdds: false, isStartingPrice: false, isBetwayBoosted: false,
     isFirst: false, isLast: false, isLinkedFirst: false, isLinkedLast: false,
   };
-  const { status, json } = await post(
-    '/v1/Betting/BookABet',
-    {
-      cultureCode: 'en-US',
-      countryCode: 'NG',
-      isSingleBet: selections.length === 1,
-      isBuildABet: false,
-      outcomes: selections.map((s) => ({
-        outcomeId: s.outcomeId,
-        eventId: Number(s.externalEventId),
-        marketId: s.marketId,
-        ...flags,
-      })),
-    },
-    { base: BASE_V2, headers: BOOK_HEADERS },
-  );
-  if (status !== 200 || !json?.bookingCode) {
-    console.error('[betway encode] failed:', status, JSON.stringify(json)?.slice(0, 300));
-    return { status: 'failed', shareCode: null };
+  const body = {
+    cultureCode: 'en-US',
+    countryCode: 'NG',
+    isSingleBet: selections.length === 1,
+    isBuildABet: false,
+    outcomes: selections.map((s) => ({
+      outcomeId: s.outcomeId,
+      eventId: Number(s.externalEventId),
+      marketId: s.marketId,
+      ...flags,
+    })),
+  };
+
+  // The site sends a logged-in Bearer token with this call (it expires in a few days). We don't know yet whether
+  // Betway really needs it for booking, so: try the new path anonymously (or with BETWAY_BEARER if you set it on the
+  // server, to test), then the older path that the 2026-09-16 notes say worked with no login.
+  const bearer = process.env.BETWAY_BEARER?.trim();
+  const attempts = [
+    { label: 'sr02', base: BASE_V2, headers: bearer ? { ...BOOK_HEADERS, Authorization: `Bearer ${bearer}` } : BOOK_HEADERS },
+    { label: 'sr (older path)', base: BASE, headers: HEADERS },
+  ];
+  for (const a of attempts) {
+    const { status, json } = await post('/v1/Betting/BookABet', body, { base: a.base, headers: a.headers });
+    if (status === 200 && json?.bookingCode) return { status: 'ok', shareCode: String(json.bookingCode) };
+    console.error(`[betway encode] ${a.label} failed:`, status, JSON.stringify(json)?.slice(0, 300));
   }
-  return { status: 'ok', shareCode: String(json.bookingCode) };
+  return { status: 'failed', shareCode: null };
 }
