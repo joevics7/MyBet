@@ -22,7 +22,7 @@ export const PLATFORM_OPTIONS = [
 export const CONVERT_TARGETS = [
   { slug: 'sportybet', label: 'SportyBet' },
   { slug: 'footballcom', label: 'Football.com' },
-  { slug: 'betway', label: 'Betway' },
+  // Betway is hidden as a target (2026-11-01): its code creation answers 401 without a login. Still a source.
   { slug: 'msport', label: 'MSport' },
   // Added 2026-10-28 so each can be tested. Not confirmed live. The 1xBet-style sites only take
   // slips from each other; everything else says so per pick. Bet9ja and Stake have no create path.
