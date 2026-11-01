@@ -143,7 +143,7 @@ export function VaultManager() {
   const [entries, setEntries] = useState<VaultEntry[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(false);
 
-  const [platform, setPlatform] = useState(PLATFORMS[0].slug);
+  const [platform, setPlatform] = useState<string>(PLATFORMS[0].slug);
   const [code, setCode] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);

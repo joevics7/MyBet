@@ -250,7 +250,7 @@ export async function encodeBangbetSlip(selections: EncodeSelectionInput[]): Pro
   // Any game not found under producer 3 (live games use 1): ask again with 1.
   const missing = prepared.filter(({ s }) => !events.has(s.externalEventId));
   if (missing.length > 0) {
-    for (const [id, ev] of await lookupEvents(legsFor(1, missing))) events.set(id, ev);
+    (await lookupEvents(legsFor(1, missing))).forEach((ev, id) => events.set(id, ev));
   }
 
   const items: Json[] = [];
