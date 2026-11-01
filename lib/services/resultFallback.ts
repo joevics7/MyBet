@@ -9,11 +9,14 @@ import { findFixtureByTeamNames } from './teamMatcher';
 import { deriveMarketFromScore } from './scoreToMarkets';
 
 const MIN_AFTER_KICKOFF_MS = 2 * 60 * 60 * 1000; // don't even look until ~2h after kickoff
+const MAX_AFTER_KICKOFF_MS = 4 * 24 * 60 * 60 * 1000;
 
 export async function winningByScore(sel: NormalizedSelection): Promise<boolean | null> {
   if (!sel.kickoffAt) return null;
   const kickoff = Date.parse(sel.kickoffAt);
   if (Number.isNaN(kickoff) || Date.now() < kickoff + MIN_AFTER_KICKOFF_MS) return null;
+  // Give up after 4 days so an unmatched game isn't looked up every hour forever (each look-up can cost API requests).
+  if (Date.now() > kickoff + MAX_AFTER_KICKOFF_MS) return null;
 
   const market = parseMarketString(sel.market, sel.homeTeam, sel.awayTeam);
   if (!market) return null;

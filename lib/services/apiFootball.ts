@@ -17,11 +17,13 @@ import type { FdMatch } from './footballData';
 
 const BASE_URL = 'https://v3.football.api-sports.io';
 
-// A suspended account answers every call with an error, so once seen it is switched off for the life of this instance
-// (no more doomed requests; a redeploy or restart tries again).
-let suspended = false;
+// Request budget: every API-Football call counts against the daily plan, so once the account is suspended or the day's
+// quota is (nearly) gone we stop calling until it can work again. Callers then use football-data.org instead.
+let blockedUntil = 0; // epoch ms
+const nextUtcMidnight = () => { const d = new Date(); d.setUTCHours(24, 0, 0, 0); return d.getTime(); };
+const RESERVE = 8; // stop when this few requests are left, keeping a little for the Decoder
 export function isApiFootballConfigured(): boolean {
-  return !!process.env.API_FOOTBALL_KEY && !suspended;
+  return !!process.env.API_FOOTBALL_KEY && Date.now() >= blockedUntil;
 }
 
 type Json = Record<string, any>;
@@ -36,7 +38,10 @@ async function apiFetch<T = Json[]>(path: string, revalidate: number): Promise<T
     headers: { 'x-apisports-key': key },
     next: { revalidate },
   });
-  if (res.status === 429) throw new Error('API-Football rate limit hit.');
+  if (res.status === 429) {
+    blockedUntil = nextUtcMidnight();
+    throw new Error('API-Football rate limit hit.');
+  }
   if (!res.ok) throw new Error(`API-Football request failed: ${res.status} ${(await res.text()).slice(0, 200)}`);
 
   const json = (await res.json()) as Json;
@@ -44,13 +49,15 @@ async function apiFetch<T = Json[]>(path: string, revalidate: number): Promise<T
   const hasErrors = Array.isArray(errs) ? errs.length > 0 : errs && Object.keys(errs).length > 0;
   if (hasErrors) {
     const text = JSON.stringify(errs);
-    if (/suspended/i.test(text)) suspended = true;
+    if (/suspended/i.test(text)) blockedUntil = Date.now() + 6 * 3600e3; // try again in 6 hours
+    else if (/limit|quota|too many/i.test(text)) blockedUntil = nextUtcMidnight();
     throw new Error(`API-Football error: ${text.slice(0, 300)}`);
   }
 
   const remaining = res.headers.get('x-ratelimit-requests-remaining');
-  if (remaining !== null && Number(remaining) < 10) {
-    console.warn(`[apiFootball] only ${remaining} requests left today`);
+  if (remaining !== null && Number(remaining) <= RESERVE) {
+    console.warn(`[apiFootball] only ${remaining} requests left today; pausing until 00:00 UTC`);
+    blockedUntil = nextUtcMidnight();
   }
   return json.response as T;
 }
@@ -85,16 +92,33 @@ function toMatch(f: Json): FdMatch {
 
 // In-process cache (survives within a warm serverless instance) on top of
 // Next's fetch cache, so a slip with 10 legs on one date costs 1 request.
-const dateCache = new Map<string, { at: number; data: FdMatch[] }>();
-const DATE_TTL_MS = 30 * 60 * 1000;
+const dateCache = new Map<string, { at: number; ttl: number; data: FdMatch[] }>();
+const inflight = new Map<string, Promise<FdMatch[]>>();
 
-async function fetchDate(date: string): Promise<FdMatch[]> {
+// Past days are final, so keep them a day; today changes (scores, status) so 30 min; future days barely change, 6 h.
+function ttlFor(date: string): number {
+  const today = new Date().toISOString().slice(0, 10);
+  if (date < today) return 24 * 3600e3;
+  if (date === today) return 30 * 60e3;
+  return 6 * 3600e3;
+}
+
+function fetchDate(date: string): Promise<FdMatch[]> {
   const hit = dateCache.get(date);
-  if (hit && Date.now() - hit.at < DATE_TTL_MS) return hit.data;
-  const rows = await apiFetch<Json[]>(`/fixtures?date=${date}`, 1800);
-  const data = rows.map(toMatch);
-  dateCache.set(date, { at: Date.now(), data });
-  return data;
+  if (hit && Date.now() - hit.at < hit.ttl) return Promise.resolve(hit.data);
+  // Several legs (or parallel scorers) asking for the same day share ONE request.
+  const pending = inflight.get(date);
+  if (pending) return pending;
+  const ttl = ttlFor(date);
+  const p = apiFetch<Json[]>(`/fixtures?date=${date}`, Math.floor(ttl / 1000))
+    .then((rows) => {
+      const data = rows.map(toMatch);
+      dateCache.set(date, { at: Date.now(), ttl, data });
+      return data;
+    })
+    .finally(() => inflight.delete(date));
+  inflight.set(date, p);
+  return p;
 }
 
 // Mirrors footballData.fetchMatchesByDateRange. One request per calendar day.
@@ -115,6 +139,7 @@ export async function fetchMatchesByDateRange(dateFrom: string, dateTo: string):
 
 const formCache = new Map<number, { at: number; data: TeamMatchResult[] }>();
 const FORM_TTL_MS = 6 * 60 * 60 * 1000;
+const formBudget = { day: '', used: 0 };
 
 // Mirrors footballData.fetchTeamRecentForm.
 export async function fetchTeamRecentForm(teamId: number, limit = 10, historyOnly = false): Promise<TeamMatchResult[]> {
@@ -126,6 +151,18 @@ export async function fetchTeamRecentForm(teamId: number, limit = 10, historyOnl
   // request per team on the 100/day free quota that the Decoder also needs.
   if (historyOnly) return [];
 
+  // Decoder / Converter / Splitter scoring asks for two teams per leg, one request each, so a long slip could burn
+  // 30+ requests. Cap these per server instance per day (API_FOOTBALL_FORM_CAP, default 25); past the cap the score
+  // simply has less data instead of spending the quota.
+  const day = new Date().toISOString().slice(0, 10);
+  if (formBudget.day !== day) { formBudget.day = day; formBudget.used = 0; }
+  const cap = Number(process.env.API_FOOTBALL_FORM_CAP ?? 25);
+  const cached = formCache.get(teamId);
+  const fresh = cached && Date.now() - cached.at < FORM_TTL_MS;
+  if (!fresh) {
+    if (formBudget.used >= cap) return [];
+    formBudget.used += 1;
+  }
   return fetchTeamLastResults(teamId, limit);
 }
 

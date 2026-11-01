@@ -135,10 +135,12 @@ export async function findFixtureByTeamNames(
   const kickoffDate = new Date(kickoffAt);
   if (Number.isNaN(kickoffDate.getTime())) return null;
 
-  // +/- 1 day around kickoff, mainly to absorb UTC-vs-local date edge
-  // cases near midnight rather than genuine date uncertainty.
-  const dateFrom = new Date(kickoffDate.getTime() - 86400000).toISOString().slice(0, 10);
-  const dateTo = new Date(kickoffDate.getTime() + 86400000).toISOString().slice(0, 10);
+  // API-Football costs one request per calendar day, so look at the kickoff day only, plus a neighbouring day when
+  // kickoff is within 3 hours of UTC midnight (the only time a provider can file it under another date). It used to
+  // fetch +/- 1 day every time, which tripled the requests.
+  const hour = kickoffDate.getUTCHours();
+  const dateFrom = new Date(kickoffDate.getTime() - (hour < 3 ? 86400000 : 0)).toISOString().slice(0, 10);
+  const dateTo = new Date(kickoffDate.getTime() + (hour >= 21 ? 86400000 : 0)).toISOString().slice(0, 10);
 
   // Name score: plain fuzzy as before, upgraded by the registry when it knows either spelling.
   //   both spellings known, same team      -> 1   (e.g. platform "Spurs" vs provider "Tottenham Hotspur")
