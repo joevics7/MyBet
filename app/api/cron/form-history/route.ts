@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ensureHistory, ensureHistoryByRange } from '@/lib/services/formHistory';
-import { fetchFinishedDay, isApiFootballConfigured } from '@/lib/services/apiFootball';
+import { ensureHistoryByRange } from '@/lib/services/formHistory';
 import { fetchFinishedRange } from '@/lib/services/footballData';
 
 export const runtime = 'nodejs';
@@ -25,8 +24,6 @@ export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const provider = req.nextUrl.searchParams.get('provider') ?? 'footballdata';
-  const asked = Number(req.nextUrl.searchParams.get('days'));
-  const days = Number.isFinite(asked) && asked > 0 ? Math.min(Math.floor(asked), 10) : 8;
   const report: Record<string, unknown> = {};
 
   try {
@@ -35,8 +32,7 @@ export async function GET(req: NextRequest) {
       else report.footballdata = await ensureHistoryByRange(fetchFinishedRange, 4, 'footballdata');
     }
     if (provider === 'apifootball' || provider === 'both') {
-      if (!isApiFootballConfigured()) report.apifootball = { error: 'API_FOOTBALL_KEY is not set (or the account is suspended).' };
-      else report.apifootball = await ensureHistory(fetchFinishedDay, days, 'apifootball');
+      report.apifootball = { error: 'Retired: API-Football is only used by /api/cron/football-daily and /api/cron/football-scores.' };
     }
     if (Object.keys(report).length === 0) return NextResponse.json({ error: 'provider must be footballdata, apifootball or both' }, { status: 400 });
     return NextResponse.json(report);

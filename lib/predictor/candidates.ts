@@ -13,7 +13,7 @@ import { fetchFamilyFeed, SPORTYBET } from '@/lib/odds/sportybetFeed';
 import type { FeedMatch } from '@/lib/odds/types';
 import { findFixtureByTeamNames } from '@/lib/services/teamMatcher';
 import { fetchMatchesByDateRange as fdFetchRange } from '@/lib/services/footballData';
-import { fetchMatchesByDateRange as afFetchRange, isApiFootballConfigured } from '@/lib/services/apiFootball';
+import { getStoredFixtures } from '@/lib/footballApi/store';
 import { scoreForMarket, type MarketSelector } from '@/lib/services/confidenceEngine';
 import { probabilitiesWithFallback } from './probabilities';
 import { loadTeamRegistry } from '@/lib/services/teamRegistry';
@@ -84,7 +84,7 @@ export interface Collected {
 
 function newProviderStats(): NonNullable<CollectStats['providers']> {
   return {
-    apiFootballConfigured: isApiFootballConfigured(),
+    apiFootballConfigured: true, // saved list: no API key or request needed
     footballDataConfigured: !!process.env.FOOTBALL_DATA_API_KEY,
     fixturesFrom: {}, formFrom: {}, formFallbacks: 0,
   };
@@ -210,14 +210,12 @@ async function fromFixtures(started: number): Promise<Collected> {
   // Both providers, in order: API-Football (wide coverage) first; football-data.org if it fails, is out of quota or returns nothing.
   const providers = newProviderStats();
   let useAf = false;
-  let fixtures: Awaited<ReturnType<typeof afFetchRange>> = [];
-  if (providers.apiFootballConfigured) {
-    try {
-      fixtures = await afFetchRange(dateFrom, dateTo);
-      useAf = fixtures.length > 0;
-    } catch (err) {
-      console.error('[predictor] API-Football fixtures failed, trying football-data.org:', err);
-    }
+  let fixtures: Awaited<ReturnType<typeof getStoredFixtures>> = [];
+  try {
+    fixtures = await getStoredFixtures(dateFrom, dateTo); // saved by the daily job: no request
+    useAf = fixtures.length > 0;
+  } catch (err) {
+    console.error('[predictor] saved fixtures unavailable, trying football-data.org:', err);
   }
   if (!useAf && providers.footballDataConfigured) fixtures = await fdFetchRange(dateFrom, dateTo);
   const registry: TeamRegistry | undefined = await loadTeamRegistry().catch(() => undefined);
@@ -229,7 +227,7 @@ async function fromFixtures(started: number): Promise<Collected> {
   const scheduled = rankedFixtures.slice(0, MAX_GAMES_PER_RUN * 3).map((r) => r.game.f);
 
   const stats: CollectStats = {
-    mode: 'model', source: useAf ? 'API-Football fixtures' : 'football-data.org fixtures', gamesAvailable: scheduled.length,
+    mode: 'model', source: useAf ? 'saved API-Football fixtures' : 'football-data.org fixtures', gamesAvailable: scheduled.length,
     gamesScanned: 0, notCovered: 0, insufficientData: 0, failed: 0, candidates: 0, budgetHit: false,
     note: 'Odds are model-implied (1 / probability), not bookmaker prices.',
     providers,

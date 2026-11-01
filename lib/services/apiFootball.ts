@@ -1,43 +1,28 @@
-// API-Football (api-sports.io) client -- wide-coverage fixture/results/form
-// source (1,000+ leagues and cups incl. international competitions), used
-// ahead of football-data.org's 12-competition free tier.
-// Docs: https://www.api-football.com/documentation-v3
+// API-Football (api-sports.io): THIN CLIENT. Nothing in the app imports this except lib/footballApi/jobs.ts, which is the
+// only code allowed to spend requests (the daily job and the score job, both capped by lib/footballApi/budget.ts).
+// Everything else reads what those jobs saved (lib/footballApi/store.ts). Docs: https://www.api-football.com/documentation-v3
 //
-// Env: API_FOOTBALL_KEY (direct api-sports.io dashboard key).
-// Quota: free = 100 req/day, Pro = 7,500 req/day. Every call counts, so:
-//  - fixtures are fetched ONE REQUEST PER DATE (all leagues) and cached,
-//    which serves every selection on that date from a single call
-//  - team form is cached per team
-// Returns the same shape as footballData.ts (FdMatch / TeamMatchResult) so
-// the matcher and engine don't care which provider supplied the data.
+// Env: API_FOOTBALL_KEY. Plan: free = 100 requests/day.
 
 import type { TeamMatchResult } from './poissonModel';
-import { lookupForm, type StoredResult } from './formHistory';
 import type { FdMatch } from './footballData';
 
 const BASE_URL = 'https://v3.football.api-sports.io';
 
-// Request budget: every API-Football call counts against the daily plan, so once the account is suspended or the day's
-// quota is (nearly) gone we stop calling until it can work again. Callers then use football-data.org instead.
+// A suspended account or an exhausted quota answers every call with an error: stop calling until it can work again.
 let blockedUntil = 0; // epoch ms
 const nextUtcMidnight = () => { const d = new Date(); d.setUTCHours(24, 0, 0, 0); return d.getTime(); };
-const RESERVE = 8; // stop when this few requests are left, keeping a little for the Decoder
 export function isApiFootballConfigured(): boolean {
   return !!process.env.API_FOOTBALL_KEY && Date.now() >= blockedUntil;
 }
 
 type Json = Record<string, any>;
 
-// API-Football reports many failures (bad key, quota, bad params) as HTTP 200
-// with a non-empty `errors` field, so res.ok alone isn't enough.
-async function apiFetch<T = Json[]>(path: string, revalidate: number): Promise<T> {
+// API-Football reports many failures (bad key, quota, bad params) as HTTP 200 with a non-empty `errors` field.
+async function apiFetch<T = Json[]>(path: string): Promise<T> {
   const key = process.env.API_FOOTBALL_KEY;
   if (!key) throw new Error('API_FOOTBALL_KEY is not set.');
-
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'x-apisports-key': key },
-    next: { revalidate },
-  });
+  const res = await fetch(`${BASE_URL}${path}`, { headers: { 'x-apisports-key': key }, cache: 'no-store' });
   if (res.status === 429) {
     blockedUntil = nextUtcMidnight();
     throw new Error('API-Football rate limit hit.');
@@ -49,20 +34,13 @@ async function apiFetch<T = Json[]>(path: string, revalidate: number): Promise<T
   const hasErrors = Array.isArray(errs) ? errs.length > 0 : errs && Object.keys(errs).length > 0;
   if (hasErrors) {
     const text = JSON.stringify(errs);
-    if (/suspended/i.test(text)) blockedUntil = Date.now() + 6 * 3600e3; // try again in 6 hours
+    if (/suspended/i.test(text)) blockedUntil = Date.now() + 6 * 3600e3;
     else if (/limit|quota|too many/i.test(text)) blockedUntil = nextUtcMidnight();
     throw new Error(`API-Football error: ${text.slice(0, 300)}`);
-  }
-
-  const remaining = res.headers.get('x-ratelimit-requests-remaining');
-  if (remaining !== null && Number(remaining) <= RESERVE) {
-    console.warn(`[apiFootball] only ${remaining} requests left today; pausing until 00:00 UTC`);
-    blockedUntil = nextUtcMidnight();
   }
   return json.response as T;
 }
 
-// Short status codes -> the status vocabulary the rest of the app already uses.
 function mapStatus(short: string): FdMatch['status'] {
   if (['TBD', 'NS'].includes(short)) return 'SCHEDULED';
   if (['1H', '2H', 'ET', 'BT', 'P', 'LIVE', 'INT'].includes(short)) return 'IN_PLAY';
@@ -79,100 +57,22 @@ function toMatch(f: Json): FdMatch {
     status: mapStatus(f.fixture.status?.short ?? ''),
     homeTeam: { id: f.teams.home.id, name: f.teams.home.name, shortName: f.teams.home.name },
     awayTeam: { id: f.teams.away.id, name: f.teams.away.name, shortName: f.teams.away.name },
-    // 90-minute score when available -- the Poisson model is a 90-minute model.
-    score: {
-      fullTime: {
-        home: f.score?.fulltime?.home ?? f.goals?.home ?? null,
-        away: f.score?.fulltime?.away ?? f.goals?.away ?? null,
-      },
-    },
+    // 90-minute score when available (the model is a 90-minute model).
+    score: { fullTime: { home: f.score?.fulltime?.home ?? f.goals?.home ?? null, away: f.score?.fulltime?.away ?? f.goals?.away ?? null } },
     competition: { id: f.league.id, name: f.league.name },
   };
 }
 
-// In-process cache (survives within a warm serverless instance) on top of
-// Next's fetch cache, so a slip with 10 legs on one date costs 1 request.
-const dateCache = new Map<string, { at: number; ttl: number; data: FdMatch[] }>();
-const inflight = new Map<string, Promise<FdMatch[]>>();
-
-// Past days are final, so keep them a day; today changes (scores, status) so 30 min; future days barely change, 6 h.
-function ttlFor(date: string): number {
-  const today = new Date().toISOString().slice(0, 10);
-  if (date < today) return 24 * 3600e3;
-  if (date === today) return 30 * 60e3;
-  return 6 * 3600e3;
+// ONE request: every league's fixtures (with scores and status) for one UTC date.
+export async function fetchFixturesForDate(date: string): Promise<FdMatch[]> {
+  const rows = await apiFetch<Json[]>(`/fixtures?date=${date}`);
+  return rows.map(toMatch);
 }
 
-function fetchDate(date: string): Promise<FdMatch[]> {
-  const hit = dateCache.get(date);
-  if (hit && Date.now() - hit.at < hit.ttl) return Promise.resolve(hit.data);
-  // Several legs (or parallel scorers) asking for the same day share ONE request.
-  const pending = inflight.get(date);
-  if (pending) return pending;
-  const ttl = ttlFor(date);
-  const p = apiFetch<Json[]>(`/fixtures?date=${date}`, Math.floor(ttl / 1000))
-    .then((rows) => {
-      const data = rows.map(toMatch);
-      dateCache.set(date, { at: Date.now(), ttl, data });
-      return data;
-    })
-    .finally(() => inflight.delete(date));
-  inflight.set(date, p);
-  return p;
-}
-
-// Mirrors footballData.fetchMatchesByDateRange. One request per calendar day.
-export async function fetchMatchesByDateRange(dateFrom: string, dateTo: string): Promise<FdMatch[]> {
-  const days: string[] = [];
-  for (let t = Date.parse(dateFrom); t <= Date.parse(dateTo) && days.length < 7; t += 86400000) {
-    days.push(new Date(t).toISOString().slice(0, 10));
-  }
-  // One failing day (e.g. a free plan refusing dates too far ahead, or one rate-limited call) must not lose the
-  // other days: keep what worked and only fail when NO day worked.
-  const settled = await Promise.allSettled(days.map(fetchDate));
-  const ok = settled.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
-  const failed = settled.flatMap((r, i) => (r.status === 'rejected' ? [`${days[i]}: ${r.reason instanceof Error ? r.reason.message : r.reason}`] : []));
-  if (failed.length) console.error('[apiFootball] some days failed:', failed.join(' | '));
-  if (ok.length === 0) throw new Error(failed[0] ?? 'API-Football returned no days');
-  return ok.flat();
-}
-
-const formCache = new Map<number, { at: number; data: TeamMatchResult[] }>();
-const FORM_TTL_MS = 6 * 60 * 60 * 1000;
-const formBudget = { day: '', used: 0 };
-
-// Mirrors footballData.fetchTeamRecentForm.
-export async function fetchTeamRecentForm(teamId: number, limit = 10, historyOnly = false): Promise<TeamMatchResult[]> {
-  // Preferred: build the form from the stored daily results (no API request). Falls back to the per-team
-  // request below only while that history is not ready yet.
-  const stored = await lookupForm(teamId, limit);
-  if (stored) return stored;
-  // historyOnly (the daily Predictor): the stored history is not ready, so report "no data" instead of spending one
-  // request per team on the 100/day free quota that the Decoder also needs.
-  if (historyOnly) return [];
-
-  // Decoder / Converter / Splitter scoring asks for two teams per leg, one request each, so a long slip could burn
-  // 30+ requests. Cap these per server instance per day (API_FOOTBALL_FORM_CAP, default 25); past the cap the score
-  // simply has less data instead of spending the quota.
-  const day = new Date().toISOString().slice(0, 10);
-  if (formBudget.day !== day) { formBudget.day = day; formBudget.used = 0; }
-  const cap = Number(process.env.API_FOOTBALL_FORM_CAP ?? 25);
-  const cached = formCache.get(teamId);
-  const fresh = cached && Date.now() - cached.at < FORM_TTL_MS;
-  if (!fresh) {
-    if (formBudget.used >= cap) return [];
-    formBudget.used += 1;
-  }
-  return fetchTeamLastResults(teamId, limit);
-}
-
-// One API request: the team's last finished matches (the top-up cron and the Decoder fallback both use this).
+// ONE request: a team's last finished matches.
 export async function fetchTeamLastResults(teamId: number, limit = 10): Promise<TeamMatchResult[]> {
-  const hit = formCache.get(teamId);
-  if (hit && Date.now() - hit.at < FORM_TTL_MS) return hit.data.slice(0, limit);
-
-  const rows = await apiFetch<Json[]>(`/fixtures?team=${teamId}&last=${limit}`, 21600);
-  const data = rows
+  const rows = await apiFetch<Json[]>(`/fixtures?team=${teamId}&last=${limit}`);
+  return rows
     .map(toMatch)
     .filter((m) => m.status === 'FINISHED' && m.score.fullTime.home !== null && m.score.fullTime.away !== null)
     .map((m) => {
@@ -183,19 +83,4 @@ export async function fetchTeamLastResults(teamId: number, limit = 10): Promise<
         isHome,
       };
     });
-  formCache.set(teamId, { at: Date.now(), data });
-  return data;
-}
-
-// Finished matches for one past date, compact, for the stored form history. ONE request covers all leagues.
-// A past day never changes, so the response can be cached for a long time.
-export async function fetchFinishedDay(date: string): Promise<StoredResult[]> {
-  const rows = await apiFetch<Json[]>(`/fixtures?date=${date}`, 86400);
-  const out: StoredResult[] = [];
-  for (const m of rows.map(toMatch)) {
-    if (m.status === 'FINISHED' && m.score.fullTime.home !== null && m.score.fullTime.away !== null) {
-      out.push([m.homeTeam.id, m.awayTeam.id, m.score.fullTime.home, m.score.fullTime.away]);
-    }
-  }
-  return out;
 }

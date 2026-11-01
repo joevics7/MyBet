@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchMatchesByDateRange as afFetchRange, fetchTeamLastResults as afLast, isApiFootballConfigured } from '@/lib/services/apiFootball';
 import { fetchMatchesByDateRange as fdFetchRange, fetchTeamLastResults as fdLast } from '@/lib/services/footballData';
 import { fetchTipsterSources } from '@/lib/services/tipsterConsensus';
 import { rankByCoverage } from '@/lib/predictor/shortlist';
@@ -19,7 +18,6 @@ export const maxDuration = 60;
 // - Each call fetches at most ?max=8 teams (default 8, cap 9) to stay under the per-minute limit.
 // - Trigger: cron-job.org, GET https://<your-domain>/api/cron/form-topup, header Authorization: Bearer <CRON_SECRET>.
 //   Run it every 2 minutes for ~30 minutes BEFORE the Predictor; once nothing is missing it returns immediately and costs nothing.
-const AF_DAILY_CAP = 40;
 
 function isAuthorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
@@ -30,10 +28,10 @@ function isAuthorized(req: NextRequest): boolean {
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const provider: HistoryProvider = req.nextUrl.searchParams.get('provider') === 'apifootball' ? 'apifootball' : 'footballdata';
-  if (provider === 'apifootball' && !isApiFootballConfigured()) {
-    return NextResponse.json({ error: 'API_FOOTBALL_KEY is not set (or the account is suspended).' }, { status: 500 });
+  if (req.nextUrl.searchParams.get('provider') === 'apifootball') {
+    return NextResponse.json({ error: 'Retired: API-Football team form is fetched only by /api/cron/football-daily.' }, { status: 410 });
   }
+  const provider: HistoryProvider = 'footballdata';
   if (provider === 'footballdata' && !process.env.FOOTBALL_DATA_API_KEY) {
     return NextResponse.json({ error: 'FOOTBALL_DATA_API_KEY is not set.' }, { status: 500 });
   }
@@ -44,7 +42,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const dates = Array.from({ length: FIXTURE_WINDOW_DAYS + 1 }, (_, i) => new Date(Date.now() + i * 86400000).toISOString().slice(0, 10));
-    const fixtures = await (provider === 'apifootball' ? afFetchRange : fdFetchRange)(dates[0], dates[dates.length - 1]);
+    const fixtures = await fdFetchRange(dates[0], dates[dates.length - 1]);
     const upcoming = Array.from(new Map(fixtures.map((f) => [f.id, f])).values()).filter(
       (f) => (f.status === 'SCHEDULED' || f.status === 'TIMED') && !LOW_SIGNAL.test(`${f.homeTeam.name} ${f.awayTeam.name} ${f.competition.name}`),
     );
@@ -54,13 +52,13 @@ export async function GET(req: NextRequest) {
     const teamIds = Array.from(new Set(shortlist.flatMap((r) => [r.game.f.homeTeam.id, r.game.f.awayTeam.id])));
     const missing = await teamsNeedingTopup(teamIds, provider);
     const usedToday = await topupsUsedToday(provider);
-    const allowed = provider === 'apifootball' ? Math.max(0, Math.min(max, AF_DAILY_CAP - usedToday)) : max;
+    const allowed = max;
 
     let fetched = 0;
     let stopped: string | undefined;
     for (const id of missing.slice(0, allowed)) {
       try {
-        await saveTopup(id, await (provider === 'apifootball' ? afLast : fdLast)(id, 10), provider);
+        await saveTopup(id, await fdLast(id, 10), provider);
         fetched++;
       } catch (err) {
         stopped = err instanceof Error ? err.message : String(err);
@@ -76,7 +74,6 @@ export async function GET(req: NextRequest) {
       teamsNeedingTopup: missing.length,
       fetchedNow: fetched,
       stillMissing: missing.length - fetched,
-      ...(provider === 'apifootball' ? { usedLast24h: usedToday + fetched, dailyCap: AF_DAILY_CAP } : {}),
       ...(stopped ? { stopped } : {}),
     });
   } catch (err) {

@@ -17,7 +17,7 @@
 // call, but /tools/decoder doesn't call it yet.
 
 import { fetchTeamRecentForm as fdForm } from './footballData';
-import { fetchTeamRecentForm as afForm } from './apiFootball';
+import { storedTeamForm as afForm } from '@/lib/footballApi/store'; // saved results only: never calls the API
 import type { FixtureProvider } from './teamMatcher';
 import { findFixtureByTeamNames, type MatchedFixture } from './teamMatcher';
 import type { TeamRegistry } from './teamNameMatch';

@@ -29,8 +29,6 @@ import { generateReason } from '@/lib/services/gemini';
 import { generateDailyTickets, type CandidateSelection, type GeneratedTicket } from '@/lib/services/predictorSelection';
 import { collectBookmakerCandidates, collectModelCandidates } from '@/lib/predictor/candidates';
 import { attachBookingCodes } from '@/lib/predictor/codes';
-import { ensureHistory } from '@/lib/services/formHistory';
-import { fetchFinishedDay, isApiFootballConfigured } from '@/lib/services/apiFootball';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 
 export const runtime = 'nodejs';
@@ -118,11 +116,9 @@ async function runPredictorJob(): Promise<NextResponse> {
   const startedAt = Date.now();
   const ticketDate = new Date().toISOString().slice(0, 10);
 
-  // 0) Top up the stored daily results the form is built from (a few requests at most; never blocks the run).
-  let formHistory: unknown = null;
-  if (isApiFootballConfigured()) {
-    formHistory = await ensureHistory(fetchFinishedDay, 4).catch((err) => ({ error: String(err) }));
-  }
+  // 0) (retired) The predictor no longer fills any history from the API: the daily football job saves the day's list and
+  // the best 40 games' team form, and this run only reads them.
+  const formHistory: unknown = null;
 
   // 1) Collect both sets in parallel (independent feeds, independent budgets).
   let bookmaker, model;
