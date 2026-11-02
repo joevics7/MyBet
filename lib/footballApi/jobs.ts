@@ -10,12 +10,22 @@
 // Budget: every request goes through openBudget(), which counts in the database and refuses past DAILY_CAP (88).
 // The daily job leaves 5 requests for the score runs.
 
-import { fetchFixturesForDate, isApiFootballConfigured, probeApi } from '@/lib/services/apiFootball';
+import { fetchFixturesForDate, fetchPrediction, isApiFootballConfigured, probeApi } from '@/lib/services/apiFootball';
 import { saveDayFixtures, saveFinishedDay, getStoredFixtures } from './store';
 import { openBudget, SCORE_RUNS_RESERVED, DAILY_CAP } from './budget';
 import { ensureHistory, type StoredResult } from '@/lib/services/formHistory';
+import { getSupabaseAdmin } from '@/lib/supabase-admin';
+import { fetchFamilyFeed, SPORTYBET } from '@/lib/odds/sportybetFeed';
+import { fetchTipsterSources } from '@/lib/services/tipsterConsensus';
+import { rankByCoverage } from '@/lib/predictor/shortlist';
+import { LOW_SIGNAL } from '@/lib/predictor/candidates';
+import { findFixtureByTeamNames } from '@/lib/services/teamMatcher';
+import { loadTeamRegistry } from '@/lib/services/teamRegistry';
 
-export const DEFAULT_HISTORY_DAYS_PER_RUN = 12; // 35 days fill in 3 daily runs; ?days=34 does it in one
+export const DEFAULT_HISTORY_DAYS_PER_RUN = 1; // the free plan only serves yesterday..tomorrow, so only yesterday can be filled
+export const GAMES_PER_DAY = 40;
+export const PREDICTIONS_PER_RUN = 7;      // ~10 requests/minute on the free plan: 7 spaced 6.5s apart fits one run
+const GAP_MS = 6500;
 
 const isoDay = (t: number) => new Date(t).toISOString().slice(0, 10);
 
@@ -48,7 +58,10 @@ export async function runDailyJob(historyDays = DEFAULT_HISTORY_DAYS_PER_RUN): P
     return { job: 'daily', day, ok: false, error: `Match list failed: ${err instanceof Error ? err.message : String(err)}`, requestsUsedToday: budget.used(), dailyCap: DAILY_CAP };
   }
 
-  // 2) history top-up: missing past days, 1 request each (stops when the budget is reached)
+  // 2) choose today's best 40 games (no requests): tipster coverage first, games SportyBet lists; keep their fixture ids
+  const selected = await selectBestGames(day).catch((err) => { console.error('[footballApi daily] selection failed:', err); return null; });
+
+  // 3) history top-up: yesterday if the score job has not filed it (older days are refused by the free plan)
   const fetchDay = async (d: string): Promise<StoredResult[]> => {
     if (!budget.tryUse()) throw new Error('request budget reached');
     const list = await fetchFixturesForDate(d);
@@ -59,7 +72,77 @@ export async function runDailyJob(historyDays = DEFAULT_HISTORY_DAYS_PER_RUN): P
   const history = await ensureHistory(fetchDay, historyDays, 'apifootball').catch((err) => ({ error: String(err) }));
   await budget.flush();
 
-  return { job: 'daily', day, ok: true, matchesToday: matches.length, history, requestsUsedToday: budget.used(), dailyCap: DAILY_CAP };
+  return { job: 'daily', day, ok: true, matchesToday: matches.length, selected, history, requestsUsedToday: budget.used(), dailyCap: DAILY_CAP };
+}
+
+// Pick the day's best games and queue them in football_predictions (data = null until the predictions job fills them).
+async function selectBestGames(day: string): Promise<{ queued: number; sportyBetGames: number; notInList: number }> {
+  const now = Date.now();
+  const endOfDay = Date.parse(`${day}T23:59:59Z`);
+  let feed: Awaited<ReturnType<typeof fetchFamilyFeed>> = [];
+  try {
+    feed = await fetchFamilyFeed(SPORTYBET, now, endOfDay);
+  } catch (err) {
+    console.error('[footballApi daily] SportyBet feed failed:', err);
+  }
+  const games = feed.filter((g) => !LOW_SIGNAL.test(`${g.home} ${g.away} ${g.league}`));
+  const sources = await fetchTipsterSources([day]).catch(() => null);
+  const registry = await loadTeamRegistry().catch(() => undefined);
+  const ranked = rankByCoverage(games.map((g) => ({ ...g, kickoff: g.kickoff })), sources);
+
+  const rows: Record<string, unknown>[] = [];
+  const seen = new Set<number>();
+  let notInList = 0;
+  for (const r of ranked) {
+    if (rows.length >= GAMES_PER_DAY) break;
+    // the SAVED list only (no request, no live fallback)
+    const fx = await findFixtureByTeamNames(r.game.home, r.game.away, r.game.kickoff, registry, 'apifootball');
+    if (!fx || (fx.status && fx.status !== 'SCHEDULED') || seen.has(fx.matchId)) { notInList++; continue; }
+    seen.add(fx.matchId);
+    rows.push({
+      fixture_id: fx.matchId, day, rank: rows.length + 1,
+      home_team_id: fx.homeTeamId, home_name: fx.homeTeamName, away_team_id: fx.awayTeamId, away_name: fx.awayTeamName,
+      kickoff: r.game.kickoff ? new Date(r.game.kickoff).toISOString() : null,
+    });
+  }
+  if (rows.length > 0) {
+    // ignoreDuplicates: a re-run must not wipe predictions already fetched
+    const { error } = await getSupabaseAdmin().from('football_predictions').upsert(rows, { onConflict: 'fixture_id', ignoreDuplicates: true });
+    if (error) throw new Error(error.message);
+  }
+  return { queued: rows.length, sportyBetGames: games.length, notInList };
+}
+
+// ---- the predictions job: fills a few queued games per run (cron-job.org every ~5 minutes for an hour) -------------------
+
+export async function runPredictionsJob(perRun = PREDICTIONS_PER_RUN): Promise<JobReport> {
+  const day = isoDay(Date.now());
+  if (!isApiFootballConfigured()) return { job: 'daily', day, ok: false, error: 'API_FOOTBALL_KEY is not set, the account is suspended / out of quota, or the per-minute limit is cooling off. Nothing was requested.' };
+
+  const admin = getSupabaseAdmin();
+  const { data: pending, error } = await admin.from('football_predictions').select('fixture_id,home_name,away_name').eq('day', day).is('data', null).order('rank', { ascending: true }).limit(perRun);
+  if (error) return { job: 'daily', day, ok: false, error: `Cannot read the queue (run the football_predictions migration?): ${error.message}` };
+  if (!pending || pending.length === 0) return { job: 'daily', day, ok: true, fetchedNow: 0, note: 'Nothing queued for today (already done, or the daily job has not run).' };
+
+  const budget = await openBudget(SCORE_RUNS_RESERVED);
+  let fetched = 0;
+  let stopped: string | undefined;
+  for (let i = 0; i < pending.length; i++) {
+    if (!budget.tryUse()) { stopped = 'request budget reached'; break; }
+    try {
+      const data = await fetchPrediction(Number(pending[i].fixture_id));
+      const { error: upErr } = await admin.from('football_predictions').update({ data: data ?? { empty: true }, fetched_at: new Date().toISOString() }).eq('fixture_id', pending[i].fixture_id);
+      if (upErr) throw new Error(upErr.message);
+      fetched++;
+    } catch (err) {
+      stopped = err instanceof Error ? err.message : String(err);
+      break;
+    }
+    if (i < pending.length - 1) await new Promise((r) => setTimeout(r, GAP_MS));
+  }
+  await budget.flush();
+  const { count } = await admin.from('football_predictions').select('fixture_id', { count: 'exact', head: true }).eq('day', day).is('data', null);
+  return { job: 'daily', day, ok: true, fetchedNow: fetched, stillQueued: count ?? null, ...(stopped ? { stopped } : {}), requestsUsedToday: budget.used(), dailyCap: DAILY_CAP };
 }
 
 // ---- the score job -------------------------------------------------------------------------------------------------------

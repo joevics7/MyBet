@@ -23,7 +23,7 @@ async function apiFetch<T = Json[]>(path: string): Promise<T> {
   if (!key) throw new Error('API_FOOTBALL_KEY is not set.');
   const res = await fetch(`${BASE_URL}${path}`, { headers: { 'x-apisports-key': key }, cache: 'no-store' });
   if (res.status === 429) {
-    blockedUntil = nextUtcMidnight();
+    blockedUntil = Date.now() + 70e3; // the free plan's per-minute limit: wait a minute, not a day
     throw new Error('API-Football rate limit hit.');
   }
   if (!res.ok) throw new Error(`API-Football request failed: ${res.status} ${(await res.text()).slice(0, 200)}`);
@@ -34,6 +34,7 @@ async function apiFetch<T = Json[]>(path: string): Promise<T> {
   if (hasErrors) {
     const text = JSON.stringify(errs);
     if (/suspended/i.test(text)) blockedUntil = Date.now() + 6 * 3600e3;
+    else if (/per minute|rateLimit/i.test(text)) blockedUntil = Date.now() + 70e3; // too fast, not out of quota
     else if (/limit|quota|too many/i.test(text)) blockedUntil = nextUtcMidnight();
     throw new Error(`API-Football error: ${text.slice(0, 300)}`);
   }
@@ -76,4 +77,14 @@ export async function probeApi(path: string): Promise<{ ok: boolean; results?: n
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+// ONE request: API-Football's own prediction for one game (win/draw/loss %, advice, goals hint, last-5 form, h2h).
+export async function fetchPrediction(fixtureId: number): Promise<Json | null> {
+  const rows = await apiFetch<Json[]>(`/predictions?fixture=${fixtureId}`);
+  return rows?.[0] ?? null;
+}
+
+export function isRateLimited(): boolean {
+  return Date.now() < blockedUntil && blockedUntil - Date.now() <= 70e3;
 }
