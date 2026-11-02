@@ -4,7 +4,6 @@
 //
 // Env: API_FOOTBALL_KEY. Plan: free = 100 requests/day.
 
-import type { TeamMatchResult } from './poissonModel';
 import type { FdMatch } from './footballData';
 
 const BASE_URL = 'https://v3.football.api-sports.io';
@@ -67,22 +66,6 @@ function toMatch(f: Json): FdMatch {
 export async function fetchFixturesForDate(date: string): Promise<FdMatch[]> {
   const rows = await apiFetch<Json[]>(`/fixtures?date=${date}`);
   return rows.map(toMatch);
-}
-
-// ONE request: a team's last finished matches.
-export async function fetchTeamLastResults(teamId: number, limit = 10): Promise<TeamMatchResult[]> {
-  const rows = await apiFetch<Json[]>(`/fixtures?team=${teamId}&last=${limit}`);
-  return rows
-    .map(toMatch)
-    .filter((m) => m.status === 'FINISHED' && m.score.fullTime.home !== null && m.score.fullTime.away !== null)
-    .map((m) => {
-      const isHome = m.homeTeam.id === teamId;
-      return {
-        goalsFor: isHome ? m.score.fullTime.home! : m.score.fullTime.away!,
-        goalsAgainst: isHome ? m.score.fullTime.away! : m.score.fullTime.home!,
-        isHome,
-      };
-    });
 }
 
 // ONE request to any path, returning the plan's answer instead of throwing (used only by the probe job).

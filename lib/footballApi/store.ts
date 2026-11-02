@@ -58,3 +58,15 @@ export async function getStoredFixtures(dateFrom: string, dateTo: string): Promi
 export async function storedTeamForm(teamId: number, limit = 10, _historyOnly?: boolean): Promise<TeamMatchResult[]> {
   return (await lookupForm(teamId, limit, 'apifootball')) ?? [];
 }
+
+// A past day's finished results -> football_results_by_day (what team form is built from). Costs no request: the score
+// job / history job already have the day's list in hand.
+export async function saveFinishedDay(day: string, matches: FdMatch[]): Promise<void> {
+  const results = matches
+    .filter((m) => m.status === 'FINISHED' && m.score.fullTime.home !== null && m.score.fullTime.away !== null)
+    .map((m) => [m.homeTeam.id, m.awayTeam.id, m.score.fullTime.home as number, m.score.fullTime.away as number]);
+  const { error } = await getSupabaseAdmin()
+    .from('football_results_by_day')
+    .upsert({ day, provider: 'apifootball', results, match_count: results.length, fetched_at: new Date().toISOString() }, { onConflict: 'day,provider' });
+  if (error) throw new Error(error.message);
+}
