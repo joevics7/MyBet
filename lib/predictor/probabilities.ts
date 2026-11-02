@@ -6,6 +6,8 @@
 // injectable so this logic can be tested without any network.
 
 import { computeMatchProbabilities, type MatchProbabilitiesData } from '@/lib/services/confidenceEngine';
+import { getStoredPrediction } from '@/lib/footballApi/store';
+import { probabilitiesFromPrediction } from '@/lib/footballApi/predictionModel';
 import { findFixtureByTeamNames, type FixtureProvider, type MatchedFixture } from '@/lib/services/teamMatcher';
 import type { TeamRegistry } from '@/lib/services/teamNameMatch';
 
@@ -13,19 +15,49 @@ export interface ProbDeps {
   compute: typeof computeMatchProbabilities;
   find: typeof findFixtureByTeamNames;
   configured: (p: FixtureProvider) => boolean;
+  // Saved API-Football prediction for a fixture id (separate from the 13-league football-data form). Optional so tests can omit it.
+  prediction?: (fixtureId: number) => ReturnType<typeof getStoredPrediction>;
 }
 
 export const realDeps: ProbDeps = {
   compute: computeMatchProbabilities,
   find: findFixtureByTeamNames,
-  configured: (p) => (p === 'apifootball' ? !!process.env.API_FOOTBALL_KEY : !!process.env.FOOTBALL_DATA_API_KEY),
+  configured: (p) => (p === 'apifootball' ? true : !!process.env.FOOTBALL_DATA_API_KEY), // API-Football = the saved list, no key needed to read it
+  prediction: getStoredPrediction,
 };
 
 export type ProbResult =
-  | { ok: true; data: MatchProbabilitiesData; usedProvider: FixtureProvider; fellBack: boolean }
+  | { ok: true; data: MatchProbabilitiesData; usedProvider: FixtureProvider; fellBack: boolean; source?: 'api-football-predictions' }
   | { ok: false; reason: 'insufficient' | 'error'; message: string };
 
+// The existing flow (football-data.org 13 leagues + stored history) is tried FIRST and is unchanged. Only when it has no
+// usable data, and API-Football's prediction was saved for this game, is the separate prediction-based model used.
 export async function probabilitiesWithFallback(
+  game: { home: string; away: string; kickoff: string | null },
+  primary: { provider: FixtureProvider; homeTeamId: number; awayTeamId: number; matchId?: number },
+  lines: number[],
+  registry?: TeamRegistry,
+  deps: ProbDeps = realDeps,
+  fdBudget: { left: number } = { left: Infinity },
+): Promise<ProbResult> {
+  const base = await baseProbabilities(game, primary, lines, registry, deps, fdBudget);
+  if (base.ok || !deps.prediction) return base;
+  try {
+    // the API-Football fixture id: the primary one if that is where the game was found, else look it up in the saved list
+    const af = primary.provider === 'apifootball' && primary.matchId
+      ? { matchId: primary.matchId, homeTeamId: primary.homeTeamId, awayTeamId: primary.awayTeamId }
+      : await deps.find(game.home, game.away, game.kickoff, registry, 'apifootball');
+    if (!af || !af.matchId) return base;
+    const saved = await deps.prediction(af.matchId);
+    const out = probabilitiesFromPrediction(saved, af.homeTeamId, af.awayTeamId, lines);
+    return out ? { ok: true, data: out, usedProvider: 'apifootball', fellBack: true, source: 'api-football-predictions' } : base;
+  } catch (err) {
+    console.error('[predictor] saved prediction fallback failed:', err);
+    return base;
+  }
+}
+
+async function baseProbabilities(
   game: { home: string; away: string; kickoff: string | null },
   primary: { provider: FixtureProvider; homeTeamId: number; awayTeamId: number },
   lines: number[],

@@ -70,3 +70,16 @@ export async function saveFinishedDay(day: string, matches: FdMatch[]): Promise<
     .upsert({ day, provider: 'apifootball', results, match_count: results.length, fetched_at: new Date().toISOString() }, { onConflict: 'day,provider' });
   if (error) throw new Error(error.message);
 }
+
+// The saved API-Football prediction reply for one fixture (filled by the predictions job), or null. Never fetches.
+export async function getStoredPrediction(fixtureId: number): Promise<Record<string, any> | null> {
+  try {
+    const { data, error } = await getSupabaseAdmin().from('football_predictions').select('data').eq('fixture_id', fixtureId).maybeSingle();
+    if (error) throw new Error(error.message);
+    const d = data?.data as Record<string, any> | null | undefined;
+    return d && !d.empty ? d : null;
+  } catch (err) {
+    console.error('[footballApi store] could not read a saved prediction:', err);
+    return null;
+  }
+}
