@@ -84,3 +84,13 @@ export async function fetchTeamLastResults(teamId: number, limit = 10): Promise<
       };
     });
 }
+
+// ONE request to any path, returning the plan's answer instead of throwing (used only by the probe job).
+export async function probeApi(path: string): Promise<{ ok: boolean; results?: number; sample?: unknown; error?: string }> {
+  try {
+    const rows = await apiFetch<Json[]>(path);
+    return { ok: true, results: Array.isArray(rows) ? rows.length : undefined, sample: Array.isArray(rows) ? rows[0] : rows };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}

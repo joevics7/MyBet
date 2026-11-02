@@ -8,7 +8,7 @@
 // Budget: 1 + 80 + 5 = 86 a day. Every request goes through openBudget(), which counts in the database and refuses
 // past DAILY_CAP (88), so a bad schedule or a re-run can't push past your 90.
 
-import { fetchFixturesForDate, fetchTeamLastResults, isApiFootballConfigured } from '@/lib/services/apiFootball';
+import { fetchFixturesForDate, fetchTeamLastResults, isApiFootballConfigured, probeApi } from '@/lib/services/apiFootball';
 import { saveDayFixtures, getStoredFixtures } from './store';
 import { openBudget, SCORE_RUNS_RESERVED, DAILY_CAP } from './budget';
 import { saveTopup } from '@/lib/services/formHistory';
@@ -140,6 +140,32 @@ export async function runScoresJob(): Promise<JobReport> {
     await budget.flush();
     return { job: 'scores', day, ok: false, error: err instanceof Error ? err.message : String(err), requestsUsedToday: budget.used(), dailyCap: DAILY_CAP };
   }
+}
+
+// ---- the probe: what does THIS plan allow? 4 requests, counted in the same daily budget -----------------------------------
+export async function runProbe(): Promise<JobReport> {
+  if (!isApiFootballConfigured()) return { job: 'daily', ok: false, error: 'API_FOOTBALL_KEY is not set, or the account is suspended / out of quota.' };
+  const day = isoDay(Date.now());
+  const list = await getStoredFixtures(day, day);
+  const sample = list.find((m) => m.status === 'SCHEDULED') ?? list[0];
+  if (!sample) return { job: 'daily', ok: false, error: 'No saved match list for today yet: run the daily job first.' };
+  const team = sample.homeTeam.id;
+  const yesterday = isoDay(Date.now() - 86400000);
+  const budget = await openBudget(0);
+  const tests: [string, string][] = [
+    ['season of one team', `/fixtures?team=${team}&season=2026`],
+    ['team + date range', `/fixtures?team=${team}&from=${isoDay(Date.now() - 30 * 86400000)}&to=${yesterday}`],
+    ['a past day list', `/fixtures?date=${yesterday}`],
+    ['predictions for one game', `/predictions?fixture=${sample.id}`],
+  ];
+  const out: Record<string, unknown> = {};
+  for (const [name, path] of tests) {
+    if (!budget.tryUse()) { out[name] = { skipped: 'budget' }; continue; }
+    const r = await probeApi(path);
+    out[name] = r.ok ? { ok: true, results: r.results } : { ok: false, error: r.error };
+  }
+  await budget.flush();
+  return { job: 'daily', day, ok: true, team: sample.homeTeam.name, game: `${sample.homeTeam.name} v ${sample.awayTeam.name}`, tests: out, requestsUsedToday: budget.used(), dailyCap: DAILY_CAP };
 }
 
 export { getStoredFixtures };
