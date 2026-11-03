@@ -25,7 +25,17 @@ import { probabilityToScore } from '@/lib/services/poissonModel';
 import type { TeamRegistry } from '@/lib/services/teamNameMatch';
 import type { CandidateSelection } from '@/lib/services/predictorSelection';
 
-export const FIXTURE_WINDOW_DAYS = 2;
+export const FIXTURE_WINDOW_DAYS = 0; // the predictor works on ONE date: today, or the date passed in (it used to take today + 2 days)
+
+// The date being predicted (YYYY-MM-DD, UTC like the saved fixture lists). Anything unreadable means today.
+export function targetDate(date?: string | null): string {
+  return date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : new Date().toISOString().slice(0, 10);
+}
+// [from, to] in ms: the whole date, but never earlier than now (games already started are not predicted).
+function dayBounds(date: string): { from: number; to: number } {
+  return { from: Math.max(Date.now(), Date.parse(`${date}T00:00:00Z`)), to: Date.parse(`${date}T23:59:59Z`) };
+}
+const onDate = (iso: string | null | undefined, date: string) => !!iso && iso.slice(0, 10) === date;
 export const MAX_GAMES_PER_RUN = 45; // analysed per set: the funnel (shortlist.ts) picks the 45 best-covered games of the day
 const CONCURRENCY = 4;
 const SCAN_BUDGET_MS = 25000; // both sets scan in parallel; leaves the rest of the 60s for analysis, saving and codes
@@ -91,9 +101,8 @@ function newProviderStats(): NonNullable<CollectStats['providers']> {
 }
 const bump = (rec: Record<string, number>, key: string) => { rec[key] = (rec[key] ?? 0) + 1; };
 
-async function loadSources(): Promise<TipsterSourceData | null> {
-  const dates = Array.from({ length: FIXTURE_WINDOW_DAYS + 1 }, (_, i) => new Date(Date.now() + i * 86400000).toISOString().slice(0, 10));
-  return fetchTipsterSources(dates).catch((err) => {
+async function loadSources(date: string): Promise<TipsterSourceData | null> {
+  return fetchTipsterSources([date]).catch((err) => {
     console.error('[predictor] tipster sources unavailable, using the model alone:', err);
     return null;
   });
@@ -125,16 +134,16 @@ async function inPool<T>(items: T[], worker: (item: T) => Promise<void>, deadlin
 
 // ---- MAIN: SportyBet games with real odds ------------------------------------------------
 
-async function fromBookmaker(started: number): Promise<Collected | null> {
-  const now = Date.now();
+async function fromBookmaker(started: number, date: string): Promise<Collected | null> {
+  const bounds = dayBounds(date);
   let feed: FeedMatch[];
   try {
-    feed = await fetchFamilyFeed(SPORTYBET, now, now + FIXTURE_WINDOW_DAYS * 86400000);
+    feed = await fetchFamilyFeed(SPORTYBET, bounds.from, bounds.to);
   } catch (err) {
     console.error('[predictor] SportyBet feed failed, using fallback:', err);
     return null;
   }
-  const games = feed.filter((g) => !LOW_SIGNAL.test(`${g.home} ${g.away} ${g.league}`));
+  const games = feed.filter((g) => onDate(g.kickoff, date) && !LOW_SIGNAL.test(`${g.home} ${g.away} ${g.league}`));
   if (games.length === 0) return null;
 
   const stats: CollectStats = {
@@ -144,7 +153,7 @@ async function fromBookmaker(started: number): Promise<Collected | null> {
   const candidates: CandidateSelection[] = [];
   const providers = (stats.providers = newProviderStats());
   const registry: TeamRegistry | undefined = await loadTeamRegistry().catch(() => undefined);
-  const sources = await loadSources();
+  const sources = await loadSources(date);
   // The funnel: games covered by the most tipster sites first; analysis stops once MAX_GAMES_PER_RUN games are analysed.
   const ranked = rankByCoverage(games.map((g) => ({ ...g, kickoff: g.kickoff })), sources);
   stats.funnel = { considered: games.length, analysed: 0, withTipsterCoverage: ranked.filter((r) => r.sources > 0).length };
@@ -204,9 +213,9 @@ async function fromBookmaker(started: number): Promise<Collected | null> {
 
 // ---- FALLBACK: fixtures only, model-implied odds -----------------------------------------------
 
-async function fromFixtures(started: number): Promise<Collected> {
-  const dateFrom = new Date().toISOString().slice(0, 10);
-  const dateTo = new Date(Date.now() + FIXTURE_WINDOW_DAYS * 86400000).toISOString().slice(0, 10);
+async function fromFixtures(started: number, date: string): Promise<Collected> {
+  const dateFrom = date;
+  const dateTo = date;
   // Both providers, in order: API-Football (wide coverage) first; football-data.org if it fails, is out of quota or returns nothing.
   const providers = newProviderStats();
   let useAf = false;
@@ -219,9 +228,9 @@ async function fromFixtures(started: number): Promise<Collected> {
   }
   if (!useAf && providers.footballDataConfigured) fixtures = await fdFetchRange(dateFrom, dateTo);
   const registry: TeamRegistry | undefined = await loadTeamRegistry().catch(() => undefined);
-  const sources = await loadSources();
+  const sources = await loadSources(date);
   const upcoming = Array.from(new Map(fixtures.map((f) => [f.id, f])).values())
-    .filter((f) => (f.status === 'SCHEDULED' || f.status === 'TIMED') && !LOW_SIGNAL.test(`${f.homeTeam.name} ${f.awayTeam.name} ${f.competition.name}`));
+    .filter((f) => onDate(f.utcDate, date) && (f.status === 'SCHEDULED' || f.status === 'TIMED') && !LOW_SIGNAL.test(`${f.homeTeam.name} ${f.awayTeam.name} ${f.competition.name}`));
   // The funnel: best-covered games first; analysis stops once MAX_GAMES_PER_RUN games are analysed.
   const rankedFixtures = rankByCoverage(upcoming.map((f) => ({ home: f.homeTeam.name, away: f.awayTeam.name, kickoff: f.utcDate, f })), sources);
   const scheduled = rankedFixtures.slice(0, MAX_GAMES_PER_RUN * 3).map((r) => r.game.f);
@@ -290,11 +299,11 @@ async function fromFixtures(started: number): Promise<Collected> {
 }
 
 // Bookmaker set: null when SportyBet's feed is unavailable (the tab then shows nothing today).
-export async function collectBookmakerCandidates(): Promise<Collected | null> {
-  return fromBookmaker(Date.now());
+export async function collectBookmakerCandidates(date?: string | null): Promise<Collected | null> {
+  return fromBookmaker(Date.now(), targetDate(date));
 }
 
 // Model set: always built from fixtures, independent of the bookmaker feed.
-export async function collectModelCandidates(): Promise<Collected> {
-  return fromFixtures(Date.now());
+export async function collectModelCandidates(date?: string | null): Promise<Collected> {
+  return fromFixtures(Date.now(), targetDate(date));
 }

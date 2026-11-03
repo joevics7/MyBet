@@ -27,7 +27,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
 import { generateReason } from '@/lib/services/gemini';
 import { generateDailyTickets, type CandidateSelection, type GeneratedTicket } from '@/lib/services/predictorSelection';
-import { collectBookmakerCandidates, collectModelCandidates } from '@/lib/predictor/candidates';
+import { collectBookmakerCandidates, collectModelCandidates, targetDate } from '@/lib/predictor/candidates';
 import { attachBookingCodes } from '@/lib/predictor/codes';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 
@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
   // Foreground run (manual testing): full JSON report, errors returned to the caller.
   if (req.nextUrl.searchParams.get('wait') === '1') {
     try {
-      return await runPredictorJob();
+      return await runPredictorJob(req.nextUrl.searchParams.get('date'));
     } catch (err) {
       console.error('[predictor cron] unhandled error:', err);
       return NextResponse.json(
@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
   // Normal run: answer cron-job.org right away, finish in the background.
   // Results/errors go to the Vercel function logs ("[predictor cron] ...").
   waitUntil(
-    runPredictorJob()
+    runPredictorJob(req.nextUrl.searchParams.get('date'))
       .then((res) => console.log('[predictor cron] finished, HTTP', res.status))
       .catch((err) => console.error('[predictor cron] unhandled error:', err)),
   );
@@ -112,9 +112,10 @@ async function insertTolerant(admin: ReturnType<typeof getSupabaseAdmin>, table:
   return admin.from(table).insert(legacyRows as never).select('id');
 }
 
-async function runPredictorJob(): Promise<NextResponse> {
+async function runPredictorJob(dateParam?: string | null): Promise<NextResponse> {
   const startedAt = Date.now();
-  const ticketDate = new Date().toISOString().slice(0, 10);
+  // ONE date only: today, or ?date=YYYY-MM-DD. Games from other dates are not fetched or analysed.
+  const ticketDate = targetDate(dateParam);
 
   // 0) (retired) The predictor no longer fills any history from the API: the daily football job saves the day's list and
   // the best 40 games' team form, and this run only reads them.
@@ -124,11 +125,11 @@ async function runPredictorJob(): Promise<NextResponse> {
   let bookmaker, model;
   try {
     [bookmaker, model] = await Promise.all([
-      collectBookmakerCandidates().catch((err) => {
+      collectBookmakerCandidates(ticketDate).catch((err) => {
         console.error('[predictor cron] bookmaker set failed:', err);
         return null;
       }),
-      collectModelCandidates().catch((err) => {
+      collectModelCandidates(ticketDate).catch((err) => {
         console.error('[predictor cron] model set failed:', err);
         return null;
       }),
