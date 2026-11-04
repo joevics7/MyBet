@@ -12,7 +12,7 @@ import { loadTeamRegistry } from '@/lib/services/teamRegistry';
 
 export const GAMES_SHOWN = 40;
 export const HISTORY_DAYS = 3; // today + the 2 days before
-const SETTLE_AFTER_KICKOFF_MS = 2 * 3600e3;
+const SETTLE_AFTER_KICKOFF_MS = 3600e3; // a saved "finished" status is what settles a game; this only skips games that cannot be over yet
 
 const isoDay = (t: number) => new Date(t).toISOString().slice(0, 10);
 
