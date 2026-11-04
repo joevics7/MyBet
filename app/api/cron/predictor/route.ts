@@ -28,6 +28,7 @@ import { waitUntil } from '@vercel/functions';
 import { generateReason } from '@/lib/services/gemini';
 import { generateDailyTickets, type CandidateSelection, type GeneratedTicket } from '@/lib/services/predictorSelection';
 import { collectBookmakerCandidates, collectModelCandidates, targetDate } from '@/lib/predictor/candidates';
+import { saveAnalysedGames } from '@/lib/predictor/games';
 import { attachBookingCodes } from '@/lib/predictor/codes';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 
@@ -147,6 +148,10 @@ async function runPredictorJob(dateParam?: string | null): Promise<NextResponse>
   const bookmakerTickets = bookmaker ? generateDailyTickets(bookmaker.candidates, usedGames) : [];
   const modelTickets = model ? generateDailyTickets(model.candidates, usedGames) : [];
   const all = [...bookmakerTickets, ...modelTickets];
+
+  // The day's analysed games (best bet each, top 40) for the all-games page and the 3-day history.
+  const gamesSaved = bookmaker ? await saveAnalysedGames(ticketDate, bookmaker.candidates).catch((e) => ({ saved: 0, error: String(e) })) : { saved: 0 };
+  console.log('[predictor cron] analysed games saved:', JSON.stringify(gamesSaved));
 
   const analysisStartedAt = Date.now();
   await writeAnalysis(all);

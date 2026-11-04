@@ -36,6 +36,7 @@ export interface CandidateSelection {
   oddsSource: 'bookmaker' | 'model';
   selector?: import('./confidenceEngine').MarketSelector; // lets the code creator find this pick on a platform
   bookName?: string;      // e.g. "SportyBet" when oddsSource is 'bookmaker'
+  modelSource?: string;   // which data priced the game: footballdata / apifootball / api-football-predictions
   // Real inputs for the written analysis (shared per fixture).
   form?: { home: string; away: string; homeGoalsAvg: number; awayGoalsAvg: number };
   reason: string;

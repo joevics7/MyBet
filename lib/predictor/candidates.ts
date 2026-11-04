@@ -196,6 +196,7 @@ async function fromBookmaker(started: number, date: string): Promise<Collected |
           oddsSource: 'bookmaker',
           selector: market,
           bookName: SPORTYBET.label,
+          modelSource: res.source ?? res.usedProvider,
           form,
           reason: '',
           kickoffAt: g.kickoff,

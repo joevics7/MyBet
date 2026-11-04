@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
 import { runScoresJob } from '@/lib/footballApi/jobs';
+import { settleGames } from '@/lib/predictor/games';
+
+// The score job, then mark the day's predictions won/lost from the freshly saved scores (no extra requests).
+async function scoresThenSettle() {
+  const report = await runScoresJob();
+  const settled = await settleGames().catch((err) => ({ error: String(err) }));
+  return { ...report, settled };
+}
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -27,6 +35,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
     }
   }
-  waitUntil(runScoresJob().then((r) => console.log('[football-scores] done', JSON.stringify(r))).catch((e) => console.error('[football-scores] failed:', e)));
+  waitUntil(scoresThenSettle().then((r) => console.log('[football-scores] done', JSON.stringify(r))).catch((e) => console.error('[football-scores] failed:', e)));
   return NextResponse.json({ status: 'started', note: 'Running in the background. Add ?wait=1 to see the report.' }, { status: 202 });
 }
