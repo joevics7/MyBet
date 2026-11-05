@@ -17,6 +17,7 @@ import { computeConfidenceScoreFromNames, type MarketSelector } from '@/lib/serv
 import type { EncodeSelectionInput } from '@/lib/services/sportybet';
 import type { NormalizedSelection } from '@/lib/services/types';
 import { resolveForBetway, resolveForSportyFamily, type Resolution } from './resolve';
+import { resolveForXbet } from './resolveXbet';
 
 export const MAX_LEGS = 20;
 const FAMILY = new Set(['sportybet', 'footballcom', 'msport']); // shared Sportradar ids
@@ -183,11 +184,10 @@ export async function convertSlip(opts: ConvertOptions, scorer: Scorer = default
     try {
       if (SR_FAMILY.has(target.slug)) resolved = await resolveForSportyFamily(legs);
       else if (target.slug === 'betway') resolved = await resolveForBetway(legs);
+      else if (XBET_FAMILY.has(target.slug)) resolved = await resolveForXbet(target.slug, legs);
       else {
         // No game lookup exists for this target yet (needs a capture of its match list).
-        const why = XBET_FAMILY.has(target.slug)
-          ? `${target.label} only takes slips from 1xBet-style sites (1xBet, Paripesa, Melbet, Betwinner, Helabet, Afropari) for now`
-          : `Matching games on ${target.label} isn't built yet`;
+        const why = `Matching games on ${target.label} isn't built yet`;
         resolved = legs.map(() => ({ ok: false as const, reason: why }));
       }
     } catch (err) {

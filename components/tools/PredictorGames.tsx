@@ -22,6 +22,11 @@ const PLATFORMS = [
   { slug: 'footballcom', label: 'Football.com' },
   { slug: 'msport', label: 'MSport' },
   { slug: 'bangbet', label: 'Bangbet' },
+  { slug: 'paripesa', label: 'Paripesa' },
+  { slug: 'melbet', label: 'Melbet' },
+  { slug: 'helabet', label: 'Helabet' },
+  { slug: 'betwinner', label: 'Betwinner' },
+  { slug: 'afropari', label: 'Afropari' },
 ];
 const MAX_PICKS = 20;
 

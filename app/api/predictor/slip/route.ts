@@ -2,15 +2,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { getPlatform, deepLinkFor } from '@/lib/services/platforms';
 import { resolveForSportyFamily } from '@/lib/converter/resolve';
+import { resolveForXbet, xbetReadbackProblems } from '@/lib/converter/resolveXbet';
 import type { MarketSelector } from '@/lib/services/confidenceEngine';
 import type { EncodeSelectionInput } from '@/lib/services/sportybet';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-// Create ONE booking code from several predicted games. These four share SportyBet's game and market ids, so the same
-// resolved picks work on all of them. Betway needs a login; the 1xBet-style sites need a match list we don't have yet.
-const PLATFORMS = ['sportybet', 'footballcom', 'msport', 'bangbet'];
+// Create ONE booking code from several predicted games.
+//  - SportyBet, Football.com, MSport, Bangbet share SportyBet's game and market ids.
+//  - The 1xBet-style sites have their own ids: each game is found on the site's own match list (resolveForXbet), and every
+//    code is read back and checked before it is shown.
+// Betway is left out (it needs a login); 1xBet is hidden for now (Cloudflare).
+const SR_PLATFORMS = ['sportybet', 'footballcom', 'msport', 'bangbet'];
+const XBET_PLATFORMS = ['paripesa', 'melbet', 'helabet', 'betwinner', 'afropari'];
+const PLATFORMS = [...SR_PLATFORMS, ...XBET_PLATFORMS];
 const MAX_GAMES = 20;
 
 // light abuse guard: 8 requests a minute per IP, per server instance
@@ -35,7 +41,7 @@ export async function POST(req: NextRequest) {
   }
   const platform = String(body.platform ?? '');
   const ids = Array.from(new Set((body.gameIds ?? []).map(String))).slice(0, MAX_GAMES + 1);
-  if (!PLATFORMS.includes(platform)) return NextResponse.json({ error: 'Choose SportyBet, Football.com, MSport or Bangbet.' }, { status: 400 });
+  if (!PLATFORMS.includes(platform)) return NextResponse.json({ error: 'Choose one of the listed platforms.' }, { status: 400 });
   if (ids.length === 0) return NextResponse.json({ error: 'Select at least one game.' }, { status: 400 });
   if (ids.length > MAX_GAMES) return NextResponse.json({ error: `Select at most ${MAX_GAMES} games.` }, { status: 400 });
 
@@ -55,7 +61,8 @@ export async function POST(req: NextRequest) {
   });
   if (usable.length === 0) return NextResponse.json({ error: 'None of the selected games can be booked (already started).', skipped }, { status: 422 });
 
-  const resolved = await resolveForSportyFamily(
+  const resolver = XBET_PLATFORMS.includes(platform) ? (l: Parameters<typeof resolveForSportyFamily>[0]) => resolveForXbet(platform, l) : resolveForSportyFamily;
+  const resolved = await resolver(
     usable.map((r) => ({
       leg: {
         externalEventId: r.external_event_id, homeTeam: r.home_team, awayTeam: r.away_team, market: r.market,
@@ -79,10 +86,20 @@ export async function POST(req: NextRequest) {
     const enc = await adapter.encode(inputs);
     if (enc.status !== 'ok' || !enc.shareCode) return NextResponse.json({ error: `${adapter.label} would not create a code. Try again or pick fewer games.`, skipped }, { status: 502 });
     let totalOdds: number | null = null;
+    let back: Awaited<ReturnType<typeof adapter.decode>> | null = null;
     try {
-      const back = await adapter.decode(enc.shareCode);
+      back = await adapter.decode(enc.shareCode);
       if (back.status === 'ok') totalOdds = back.totalOdds;
     } catch { /* the code exists; the read-back is only for the total */ }
+    if (XBET_PLATFORMS.includes(platform)) {
+      // Never hand out a code on these sites unless it reads back as exactly the bets we asked for.
+      if (!back || back.status !== 'ok') return NextResponse.json({ error: `${adapter.label} made a code but it could not be checked, so it was not shown. Try again.`, skipped }, { status: 502 });
+      const problems = xbetReadbackProblems(inputs, back.selections.map((x) => ({ externalEventId: x.externalEventId, market: x.market, rawOutcomeId: x.rawOutcomeId ?? null, rawSpecifier: x.rawSpecifier ?? null })));
+      if (problems.length > 0) {
+        console.error('[predictor slip] read-back mismatch on', platform, problems);
+        return NextResponse.json({ error: `${adapter.label}'s code did not match the bets we asked for, so it was not shown. We've logged it.`, skipped }, { status: 502 });
+      }
+    }
     return NextResponse.json({ code: enc.shareCode, platform, label: adapter.label, deepLink: deepLinkFor(platform, enc.shareCode), totalOdds, used: inputs.length, skipped });
   } catch (err) {
     console.error('[predictor slip] encode failed:', platform, err);
