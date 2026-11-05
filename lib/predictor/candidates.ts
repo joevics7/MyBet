@@ -25,7 +25,10 @@ import { probabilityToScore } from '@/lib/services/poissonModel';
 import type { TeamRegistry } from '@/lib/services/teamNameMatch';
 import type { CandidateSelection } from '@/lib/services/predictorSelection';
 
-export const FIXTURE_WINDOW_DAYS = 0; // the predictor works on ONE date: today, or the date passed in (it used to take today + 2 days)
+export const FIXTURE_WINDOW_DAYS = 0; // the predictor works on ONE date: today, or the date passed in
+// What we FETCH is unchanged from before (the feed/lists/tipster pages over today + 2 days): narrowing the request itself broke
+// the run (2026-11-04/05: no / 1 ticket). Only the games KEPT are limited to the one date (see onDate()).
+const FETCH_AHEAD_DAYS = 2;
 
 // The date being predicted (YYYY-MM-DD, UTC like the saved fixture lists). Anything unreadable means today.
 export function targetDate(date?: string | null): string {
@@ -102,7 +105,8 @@ function newProviderStats(): NonNullable<CollectStats['providers']> {
 const bump = (rec: Record<string, number>, key: string) => { rec[key] = (rec[key] ?? 0) + 1; };
 
 async function loadSources(date: string): Promise<TipsterSourceData | null> {
-  return fetchTipsterSources([date]).catch((err) => {
+  const dates = Array.from({ length: FETCH_AHEAD_DAYS + 1 }, (_, i) => new Date(Date.parse(`${date}T00:00:00Z`) + i * 86400000).toISOString().slice(0, 10));
+  return fetchTipsterSources(dates).catch((err) => {
     console.error('[predictor] tipster sources unavailable, using the model alone:', err);
     return null;
   });
@@ -138,7 +142,8 @@ async function fromBookmaker(started: number, date: string): Promise<Collected |
   const bounds = dayBounds(date);
   let feed: FeedMatch[];
   try {
-    feed = await fetchFamilyFeed(SPORTYBET, bounds.from, bounds.to);
+    // same request as before the single-date change (now .. now+2 days); the date filter below keeps one day
+    feed = await fetchFamilyFeed(SPORTYBET, bounds.from, bounds.from + FETCH_AHEAD_DAYS * 86400000);
   } catch (err) {
     console.error('[predictor] SportyBet feed failed, using fallback:', err);
     return null;
@@ -216,7 +221,7 @@ async function fromBookmaker(started: number, date: string): Promise<Collected |
 
 async function fromFixtures(started: number, date: string): Promise<Collected> {
   const dateFrom = date;
-  const dateTo = date;
+  const dateTo = new Date(Date.parse(`${date}T00:00:00Z`) + FETCH_AHEAD_DAYS * 86400000).toISOString().slice(0, 10);
   // Both providers, in order: API-Football (wide coverage) first; football-data.org if it fails, is out of quota or returns nothing.
   const providers = newProviderStats();
   let useAf = false;
