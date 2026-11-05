@@ -6,7 +6,7 @@ export const maxDuration = 60;
 // ONE-OFF CHECK (no API-Football requests): can we read a 1xBet-style site's football match list from the server?
 // The Predictor's "create a code" needs each site's own game ids, and finding a game there needs a list of its matches.
 // Usage: /api/cron/xbet-probe?site=paripesa   (sites: paripesa, 1xbet, melbet, helabet, betwinner, afropari)
-// Optional: &gr=<group number> for sites whose group we do not know. Same Authorization header as the other crons.
+// &mode=discover tries other list endpoints. Optional: &gr=<group number> for sites whose group we do not know. Same Authorization header as the other crons.
 const SITES: Record<string, { origin: string; ref: number; gr?: number }> = {
   paripesa: { origin: 'https://paripesa.ng', ref: 188, gr: 758 },
   '1xbet': { origin: 'https://1xbet.ng', ref: 159, gr: 412 },
@@ -41,7 +41,18 @@ export async function GET(req: NextRequest) {
   const from = Math.floor(Date.parse(`${day}T00:00:00Z`) / 1000);
   const to = from + 86400;
   const common = `cfView=3&fcountry=132&grMode=4&lng=en&ref=${cfg.ref}${gr ? `&gr=${gr}` : ''}`;
-  const variants: Record<string, string> = {
+  const feed = '/service-api/main-line-feed/v3';
+  const discover = req.nextUrl.searchParams.get('mode') === 'discover';
+  // mode=discover: look for the call that lists football leagues / games (the plain day list answered 400)
+  const discovery: Record<string, string> = {
+    'GlobalChamp1x2 id=7 (works on 1xBet)': `${feed}/GlobalChamp1x2?cfView=3&count=70&fcountry=132&grMode=4&id=7&lng=en&ref=${cfg.ref}${gr ? `&gr=${gr}` : ''}`,
+    'champs for football': `${feed}/champs?sportId=1&fcountry=132&lng=en&ref=${cfg.ref}${gr ? `&gr=${gr}` : ''}`,
+    'globalChamps for football': `${feed}/globalChamps?sportId=1&fcountry=132&lng=en&ref=${cfg.ref}${gr ? `&gr=${gr}` : ''}`,
+    'sports list': `${feed}/sports?fcountry=132&lng=en&ref=${cfg.ref}${gr ? `&gr=${gr}` : ''}`,
+    'top games football': `${feed}/topGames?sportId=1&count=50&fcountry=132&grMode=4&lng=en&ref=${cfg.ref}${gr ? `&gr=${gr}` : ''}`,
+    'games1x2 with sportId + countOnly': `${feed}/games1x2?cfView=3&count=50&fcountry=132&grMode=4&lng=en&ref=${cfg.ref}${gr ? `&gr=${gr}` : ''}&sportId=1&dateFrom=${from}&dateTo=${to}&selectedMs=1.1.0`,
+  };
+  const variants: Record<string, string> = discover ? discovery : {
     'day list (no market filter)': `/service-api/main-line-feed/v3/games1x2?${common}&count=300&dateFrom=${from}&dateTo=${to}`,
     'day list, football only': `/service-api/main-line-feed/v3/games1x2?${common}&count=300&dateFrom=${from}&dateTo=${to}&sportIds=1`,
     'day list, sports=1': `/service-api/main-line-feed/v3/games1x2?${common}&count=300&dateFrom=${from}&dateTo=${to}&sports=1`,
