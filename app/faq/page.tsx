@@ -64,24 +64,24 @@ export default function FAQPage() {
       />
 
       <nav className="flex items-center gap-1.5 text-xs text-muted-foreground mb-8 font-mono" aria-label="Breadcrumb">
-        <Link href="/" className="hover:text-[hsl(var(--verified))] transition-colors">Home</Link>
+        <Link href="/" className="hover:text-brand transition-colors">Home</Link>
         <ChevronRight className="h-3 w-3" />
         <span>FAQ</span>
       </nav>
 
       <div className="max-w-2xl mb-10">
-        <p className="text-xs uppercase tracking-[0.14em] font-mono text-[hsl(var(--verified))] mb-2">FAQ</p>
-        <h1 className="font-serif text-3xl md:text-4xl font-semibold">Frequently asked questions</h1>
+        <p className="text-xs uppercase tracking-[0.14em] font-mono text-brand mb-2">FAQ</p>
+        <h1 className="font-display text-3xl md:text-4xl font-semibold">Frequently asked questions</h1>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
         <div className="lg:col-span-2 space-y-4">
           {FAQ_ITEMS.map((faq) => (
-            <div key={faq.question} className="border border-border bg-card rounded-sm p-6">
+            <div key={faq.question} className="border border-border bg-card rounded-lg p-6">
               <div className="flex items-start gap-3">
-                <HelpCircle className="h-4.5 w-4.5 text-[hsl(var(--seal))] flex-shrink-0 mt-0.5" strokeWidth={1.75} />
+                <HelpCircle className="h-4.5 w-4.5 text-gold flex-shrink-0 mt-0.5" strokeWidth={1.75} />
                 <div>
-                  <h3 className="font-serif font-semibold text-base leading-snug">{faq.question}</h3>
+                  <h3 className="font-display font-semibold text-base leading-snug">{faq.question}</h3>
                   <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">{faq.answer}</p>
                 </div>
               </div>
@@ -90,7 +90,7 @@ export default function FAQPage() {
         </div>
 
         <div className="space-y-6 lg:sticky lg:top-24 lg:self-start">
-          <div className="border border-border bg-card rounded-sm p-6">
+          <div className="border border-border bg-card rounded-lg p-6">
             <h2 className="text-xs font-mono font-semibold uppercase tracking-wide mb-2">Still need help?</h2>
             <p className="text-xs text-muted-foreground leading-relaxed mb-5">
               Not covered above? Reach us directly.
@@ -100,9 +100,9 @@ export default function FAQPage() {
                 href={TELEGRAM_BOT_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-3 p-3 border border-border rounded-sm hover:border-[hsl(var(--seal))] transition-colors"
+                className="flex items-center gap-3 p-3 border border-border rounded-lg hover:border-gold transition-colors"
               >
-                <Send className="h-4.5 w-4.5 text-[hsl(var(--seal))] flex-shrink-0" />
+                <Send className="h-4.5 w-4.5 text-gold flex-shrink-0" />
                 <div>
                   <p className="text-xs font-semibold">Telegram</p>
                   <p className="text-[11px] text-muted-foreground">Fastest response</p>
@@ -110,7 +110,7 @@ export default function FAQPage() {
               </a>
               <a
                 href={`mailto:${SUPPORT_EMAIL}`}
-                className="flex items-center gap-3 p-3 border border-border rounded-sm hover:border-[hsl(var(--seal))] transition-colors"
+                className="flex items-center gap-3 p-3 border border-border rounded-lg hover:border-gold transition-colors"
               >
                 <Mail className="h-4.5 w-4.5 text-muted-foreground flex-shrink-0" />
                 <div>
@@ -121,9 +121,9 @@ export default function FAQPage() {
             </div>
           </div>
 
-          <div className="p-5 border border-border bg-muted/40 rounded-sm">
+          <div className="p-5 border border-border bg-muted/40 rounded-lg">
             <div className="flex items-center gap-2 mb-2">
-              <ShieldCheck className="h-4 w-4 text-[hsl(var(--seal))]" />
+              <ShieldCheck className="h-4 w-4 text-gold" />
               <h4 className="text-xs font-mono font-semibold uppercase tracking-wide">Bet responsibly</h4>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">

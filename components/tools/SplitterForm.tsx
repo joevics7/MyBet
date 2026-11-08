@@ -26,9 +26,9 @@ const MODES: { value: 'risk' | 'even' | 'market'; label: string }[] = [
 
 function scoreColor(score: number | null): string {
   if (score === null) return 'text-muted-foreground';
-  if (score >= 70) return 'text-[hsl(var(--verified))]';
-  if (score >= 40) return 'text-amber-600';
-  return 'text-[hsl(var(--rust))]';
+  if (score >= 70) return 'text-brand';
+  if (score >= 40) return 'text-medium';
+  return 'text-risky';
 }
 
 export function SplitterForm() {
@@ -69,7 +69,7 @@ export function SplitterForm() {
   }
 
   return (
-    <div className="rounded-sm border border-border bg-card p-6">
+    <div className="rounded-xl border border-border bg-card shadow-card p-6">
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
           <label htmlFor="platform" className="text-xs font-mono uppercase tracking-wide text-muted-foreground">
@@ -79,7 +79,7 @@ export function SplitterForm() {
             id="platform"
             value={platform}
             onChange={(e) => setPlatform(e.target.value)}
-            className="mt-1 w-full rounded-sm border border-border bg-background px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
           >
             {PLATFORM_OPTIONS.map((p) => (
               <option key={p.slug} value={p.slug}>
@@ -97,7 +97,7 @@ export function SplitterForm() {
             value={code}
             onChange={(e) => setCode(e.target.value)}
             placeholder="e.g. P79BMH"
-            className="mt-1 w-full h-10 rounded-sm border border-border bg-background px-3 text-sm font-mono uppercase"
+            className="mt-1 w-full h-10 rounded-lg border border-border bg-background px-3 text-sm font-mono uppercase"
           />
         </div>
 
@@ -109,10 +109,10 @@ export function SplitterForm() {
                 key={m.value}
                 type="button"
                 onClick={() => setMode(m.value)}
-                className={`flex-1 h-9 rounded-sm text-xs font-semibold border transition-colors ${
+                className={`flex-1 h-9 rounded-lg text-xs font-semibold border transition-colors ${
                   mode === m.value
-                    ? 'bg-[hsl(var(--ink))] text-[hsl(var(--paper))] border-[hsl(var(--ink))]'
-                    : 'border-border hover:border-[hsl(var(--seal))]'
+                    ? 'bg-brand text-brand-foreground shadow-glow border-foreground'
+                    : 'border-border hover:border-gold'
                 }`}
               >
                 {m.label}
@@ -133,7 +133,7 @@ export function SplitterForm() {
               max={10}
               value={groupCount}
               onChange={(e) => setGroupCount(parseInt(e.target.value) || 2)}
-              className="mt-1 w-24 h-9 rounded-sm border border-border bg-background px-3 text-sm"
+              className="mt-1 w-24 h-9 rounded-lg border border-border bg-background px-3 text-sm"
             />
           </div>
         )}
@@ -141,7 +141,7 @@ export function SplitterForm() {
         <button
           type="submit"
           disabled={loading || !code.trim()}
-          className="w-full h-10 rounded-sm bg-[hsl(var(--ink))] text-[hsl(var(--paper))] text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+          className="w-full h-10 rounded-lg bg-brand text-brand-foreground shadow-glow text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
           Split slip
@@ -149,7 +149,7 @@ export function SplitterForm() {
       </form>
 
       {error && (
-        <p className="mt-4 text-sm text-[hsl(var(--rust))] bg-[hsl(var(--rust))]/10 rounded-sm px-3 py-2">
+        <p className="mt-4 text-sm text-risky bg-risky/10 rounded-lg px-3 py-2">
           {error}
         </p>
       )}
@@ -157,10 +157,10 @@ export function SplitterForm() {
       {groups && (
         <div className="mt-5 space-y-4">
           {groups.map((group, gi) => (
-            <div key={gi} className="rounded-sm border border-border p-4">
+            <div key={gi} className="rounded-lg border border-border p-4">
               <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                 <div className="flex items-center gap-1.5">
-                  <Layers className="h-3.5 w-3.5 text-[hsl(var(--seal))]" />
+                  <Layers className="h-3.5 w-3.5 text-gold" />
                   <p className="text-xs font-mono uppercase tracking-wide">{group.label}</p>
                 </div>
                 <span className="text-xs font-mono text-muted-foreground min-w-0 break-words text-right">

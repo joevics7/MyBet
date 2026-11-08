@@ -39,24 +39,24 @@ const columns = [
 
 export function Footer() {
   return (
-    <footer className="border-t border-border bg-[hsl(var(--ink))] text-[hsl(var(--paper))]/90 mt-20">
+    <footer className="border-t border-border bg-brand text-brand-foreground shadow-glow/90 mt-20">
       <div className="max-w-6xl mx-auto px-4 py-14 grid grid-cols-2 md:grid-cols-6 gap-8">
         <div className="col-span-2">
-          <p className="font-serif text-xl font-semibold text-[hsl(var(--paper))]">BetMeter</p>
-          <p className="mt-3 text-sm text-[hsl(var(--paper))]/60 max-w-xs">
+          <p className="font-display text-xl font-semibold text-footer-foreground">BetMeter</p>
+          <p className="mt-3 text-sm text-footer-foreground/60 max-w-xs">
             Booking code tools with a confidence score on every selection — decode, convert,
             split, compare, save, and size your stake.
           </p>
         </div>
         {columns.map((col) => (
           <div key={col.heading}>
-            <p className="text-xs uppercase tracking-[0.14em] text-[hsl(var(--seal))] font-mono mb-3">
+            <p className="text-xs uppercase tracking-[0.14em] text-brand font-mono mb-3">
               {col.heading}
             </p>
             <ul className="space-y-2">
               {col.links.map((l) => (
                 <li key={l.href}>
-                  <Link href={l.href} className="text-sm text-[hsl(var(--paper))]/70 hover:text-[hsl(var(--paper))] transition-colors">
+                  <Link href={l.href} className="text-sm text-footer-foreground/70 hover:text-footer-foreground transition-colors">
                     {l.label}
                   </Link>
                 </li>
@@ -66,7 +66,7 @@ export function Footer() {
         ))}
       </div>
       <div className="border-t border-white/10">
-        <p className="max-w-6xl mx-auto px-4 py-5 text-xs text-[hsl(var(--paper))]/50">
+        <p className="max-w-6xl mx-auto px-4 py-5 text-xs text-footer-foreground/50">
           © {new Date().getFullYear()} BetMeter. Statistical analysis, not a guarantee — always bet responsibly.
         </p>
       </div>

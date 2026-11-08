@@ -11,10 +11,10 @@ export const metadata: Metadata = {
 export default function ToolsIndexPage() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-14">
-      <p className="text-xs uppercase tracking-[0.14em] font-mono text-[hsl(var(--verified))] mb-2">
+      <p className="text-xs uppercase tracking-[0.14em] font-mono text-brand mb-2">
         Tools
       </p>
-      <h1 className="font-serif text-3xl md:text-4xl font-semibold">
+      <h1 className="font-display text-3xl md:text-4xl font-semibold">
         Every tool, one confidence engine
       </h1>
       <p className="mt-3 text-muted-foreground max-w-lg">
@@ -27,10 +27,10 @@ export default function ToolsIndexPage() {
           <Link
             key={tool.slug}
             href={tool.href}
-            className="group rounded-sm border border-border bg-card p-6 hover:border-[hsl(var(--seal))] transition-colors"
+            className="group rounded-xl border border-border bg-card shadow-card p-6 hover:border-gold transition-colors"
           >
             <div className="flex items-center justify-between">
-              <p className="font-serif text-base font-semibold leading-snug">{tool.shortTitle}</p>
+              <p className="font-display text-base font-semibold leading-snug">{tool.shortTitle}</p>
               {tool.status === 'soon' && (
                 <span className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground border border-border rounded-full px-2 py-0.5">
                   Coming soon
@@ -38,7 +38,7 @@ export default function ToolsIndexPage() {
               )}
             </div>
             <p className="mt-2 text-sm text-muted-foreground">{tool.tagline}</p>
-            <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[hsl(var(--verified))] opacity-0 group-hover:opacity-100 transition-opacity">
+            <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-brand opacity-0 group-hover:opacity-100 transition-opacity">
               Open <ArrowRight className="h-3 w-3" />
             </span>
           </Link>

@@ -21,16 +21,16 @@ export default function PrivacyPage() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-14">
       <nav className="flex items-center gap-1.5 text-xs text-muted-foreground mb-6 font-mono" aria-label="Breadcrumb">
-        <Link href="/" className="hover:text-[hsl(var(--verified))] transition-colors">Home</Link>
+        <Link href="/" className="hover:text-brand transition-colors">Home</Link>
         <ChevronRight className="h-3 w-3" />
         <span>Privacy Policy</span>
       </nav>
 
       <div className="flex items-center gap-2 mb-2">
-        <ShieldCheck className="h-4.5 w-4.5 text-[hsl(var(--seal))]" />
-        <span className="text-xs font-mono font-semibold tracking-widest text-[hsl(var(--verified))] uppercase">Your privacy</span>
+        <ShieldCheck className="h-4.5 w-4.5 text-gold" />
+        <span className="text-xs font-mono font-semibold tracking-widest text-brand uppercase">Your privacy</span>
       </div>
-      <h1 className="font-serif text-3xl md:text-4xl font-semibold mb-1">Privacy Policy</h1>
+      <h1 className="font-display text-3xl md:text-4xl font-semibold mb-1">Privacy Policy</h1>
       <p className="text-xs text-muted-foreground mb-10">Last updated: September 2026</p>
 
       <div className="max-w-2xl prose prose-sm dark:prose-invert space-y-8 text-sm text-muted-foreground leading-relaxed">
@@ -130,13 +130,13 @@ export default function PrivacyPage() {
           <ul className="list-none pl-0 space-y-1">
             <li>
               📧 Email:{' '}
-              <a href={`mailto:${SUPPORT_EMAIL}`} className="text-[hsl(var(--verified))] underline">
+              <a href={`mailto:${SUPPORT_EMAIL}`} className="text-brand underline">
                 {SUPPORT_EMAIL}
               </a>
             </li>
             <li>
               🌐 Web:{' '}
-              <Link href="/contact" className="text-[hsl(var(--verified))] underline">
+              <Link href="/contact" className="text-brand underline">
                 betmeter.com/contact
               </Link>
             </li>

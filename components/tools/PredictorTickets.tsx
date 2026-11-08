@@ -36,9 +36,9 @@ export interface PredictorTicket {
 }
 
 function scoreColor(score: number): string {
-  if (score >= 70) return 'text-[hsl(var(--verified))]';
-  if (score >= 40) return 'text-amber-600';
-  return 'text-[hsl(var(--rust))]';
+  if (score >= 70) return 'text-brand';
+  if (score >= 40) return 'text-medium';
+  return 'text-risky';
 }
 
 function CodeRow({ c }: { c: BookingCode }) {
@@ -62,7 +62,7 @@ function CodeRow({ c }: { c: BookingCode }) {
         <p className="select-all font-mono text-sm font-semibold tracking-wider">{c.code}</p>
       </div>
       <div className="flex shrink-0 gap-1.5">
-        <button onClick={copy} className="flex items-center gap-1 rounded-sm border border-border px-2 py-1 text-xs">
+        <button onClick={copy} className="flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs">
           <Copy className="h-3 w-3" /> {copied ? 'Copied' : 'Copy'}
         </button>
         {c.deepLink && (
@@ -70,7 +70,7 @@ function CodeRow({ c }: { c: BookingCode }) {
             href={c.deepLink}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1 rounded-sm border border-border px-2 py-1 text-xs"
+            className="flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs"
           >
             <ExternalLink className="h-3 w-3" /> Open
           </a>
@@ -83,12 +83,12 @@ function CodeRow({ c }: { c: BookingCode }) {
 function TicketCard({ ticket }: { ticket: PredictorTicket }) {
   const codes = ticket.booking_codes ?? [];
   return (
-    <div className="rounded-sm border border-border bg-card p-5">
+    <div className="rounded-xl border border-border bg-card shadow-card p-5">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <CheckCircle2 className="h-4 w-4 text-[hsl(var(--seal))]" />
-          <p className="font-serif font-semibold">Target odds ~{ticket.target_band}</p>
-          <span className="rounded-sm border border-border px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wide text-muted-foreground">
+          <CheckCircle2 className="h-4 w-4 text-gold" />
+          <p className="font-display font-semibold">Target odds ~{ticket.target_band}</p>
+          <span className="rounded-lg border border-border px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wide text-muted-foreground">
             {ticket.odds_basis === 'bookmaker' ? 'Bookmaker odds' : 'Model odds'}
           </span>
         </div>
@@ -99,7 +99,7 @@ function TicketCard({ ticket }: { ticket: PredictorTicket }) {
       </div>
       <div className="space-y-2">
         {ticket.selections.map((s, i) => (
-          <div key={i} className="rounded-sm border border-border px-3.5 py-2.5">
+          <div key={i} className="rounded-lg border border-border px-3.5 py-2.5">
             <div className="flex items-center justify-between">
               <p className="text-sm">
                 {s.home_team} v {s.away_team}
@@ -148,7 +148,7 @@ export function PredictorTickets({ tickets }: { tickets: PredictorTicket[] }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-muted-foreground bg-muted/40 border border-border rounded-sm px-3 py-2">
+      <p className="text-xs text-muted-foreground bg-muted/40 border border-border rounded-lg px-3 py-2">
         <strong>Bookmaker odds</strong>: games listed on SportyBet, with SportyBet&rsquo;s real prices when the tickets were built (they can
         change, so check the price before you bet). <strong>Model odds</strong>: a wider set of games from our football data, priced at our
         model&rsquo;s implied fair odds (1 / estimated probability), so a platform&rsquo;s price will differ. Statistical analysis, not a guarantee.

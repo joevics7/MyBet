@@ -32,14 +32,14 @@ const MAX_PICKS = 20;
 
 const level = (c: number) => (c >= 85 ? 'High' : c >= 75 ? 'Medium' : 'Lower');
 const levelClass = (c: number) =>
-  c >= 85 ? 'border-[hsl(var(--seal))] text-[hsl(var(--seal))]' : c >= 75 ? 'border-border text-foreground' : 'border-border text-muted-foreground';
+  c >= 85 ? 'border-gold text-gold' : c >= 75 ? 'border-border text-foreground' : 'border-border text-muted-foreground';
 const time = (iso: string | null) =>
   iso ? new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Lagos' }) : '';
 const day = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 
 function ResultIcon({ r }: { r: GameRow['result'] }) {
-  if (r === 'won') return <Check className="h-4 w-4 text-green-600" aria-label="Won" />;
-  if (r === 'lost') return <X className="h-4 w-4 text-red-600" aria-label="Lost" />;
+  if (r === 'won') return <Check className="h-4 w-4 text-safe" aria-label="Won" />;
+  if (r === 'lost') return <X className="h-4 w-4 text-risky" aria-label="Lost" />;
   if (r === 'void') return <Minus className="h-4 w-4 text-muted-foreground" aria-label="Void" />;
   return <Clock className="h-4 w-4 text-muted-foreground" aria-label="Waiting" />;
 }
@@ -104,7 +104,7 @@ export function PredictorGames({ todayDate, today, history }: { todayDate: strin
     <div className="pb-40">
       <div className="mb-4 flex gap-2 text-sm">
         {(['today', 'history'] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={`rounded-sm border px-3 py-1.5 ${tab === t ? 'border-foreground font-medium' : 'border-border text-muted-foreground'}`}>
+          <button key={t} onClick={() => setTab(t)} className={`rounded-lg border px-3 py-1.5 ${tab === t ? 'border-foreground font-medium' : 'border-border text-muted-foreground'}`}>
             {t === 'today' ? `Today (${sorted.length})` : 'Last 3 days'}
           </button>
         ))}
@@ -112,12 +112,12 @@ export function PredictorGames({ todayDate, today, history }: { todayDate: strin
 
       {tab === 'today' ? (
         sorted.length === 0 ? (
-          <div className="rounded-sm border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">
+          <div className="rounded-lg border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">
             <p className="font-medium text-foreground">No games analysed yet for {day(todayDate)}</p>
             <p className="mt-1.5">The Predictor runs each morning. Check back after it has run.</p>
           </div>
         ) : (
-          <ul className="divide-y divide-border rounded-sm border border-border bg-card">
+          <ul className="divide-y divide-border rounded-xl border border-border bg-card shadow-card">
             {sorted.map((g) => {
               const c = Number(g.confidence);
               const isOn = picked.has(g.id);
@@ -125,7 +125,7 @@ export function PredictorGames({ todayDate, today, history }: { todayDate: strin
               return (
                 <li key={g.id}>
                   <button onClick={() => toggle(g)} disabled={gone} className={`flex w-full items-start gap-3 p-3 text-left ${isOn ? 'bg-muted/60' : ''} ${gone ? 'opacity-50' : ''}`}>
-                    <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-sm border ${isOn ? 'border-foreground bg-foreground text-background' : 'border-border'}`}>
+                    <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-lg border ${isOn ? 'border-foreground bg-foreground text-background' : 'border-border'}`}>
                       {isOn ? <Check className="h-3.5 w-3.5" /> : null}
                     </span>
                     <span className="min-w-0 flex-1">
@@ -133,7 +133,7 @@ export function PredictorGames({ todayDate, today, history }: { todayDate: strin
                       <span className="block text-xs text-muted-foreground">{time(g.kickoff_at)}{g.competition ? ` · ${g.competition}` : ''}{gone ? ' · started' : ''}</span>
                       <span className="mt-1 block text-sm">{g.market}{g.odds ? <span className="font-mono text-muted-foreground"> · {Number(g.odds).toFixed(2)}</span> : null}</span>
                     </span>
-                    <span className={`shrink-0 rounded-sm border px-2 py-0.5 text-xs ${levelClass(c)}`}>{level(c)} {Math.round(c)}</span>
+                    <span className={`shrink-0 rounded-lg border px-2 py-0.5 text-xs ${levelClass(c)}`}>{level(c)} {Math.round(c)}</span>
                   </button>
                 </li>
               );
@@ -146,13 +146,13 @@ export function PredictorGames({ todayDate, today, history }: { todayDate: strin
             {all.pct === null ? 'No results yet.' : <>Last 3 days: <strong className="text-foreground">{all.won} won, {all.lost} lost</strong> ({all.pct}%){all.pending ? ` · ${all.pending} waiting` : ''}{all.voided ? ` · ${all.voided} void` : ''}</>}
           </p>
           {histDates.length === 0 ? (
-            <div className="rounded-sm border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">No history yet. It builds up as each day&rsquo;s games finish.</div>
+            <div className="rounded-lg border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">No history yet. It builds up as each day&rsquo;s games finish.</div>
           ) : (
             histDates.map((d) => {
               const games = history.filter((g) => g.game_date === d).sort((a, b) => Number(b.confidence) - Number(a.confidence));
               const r = record(games);
               return (
-                <div key={d} className="rounded-sm border border-border bg-card">
+                <div key={d} className="rounded-xl border border-border bg-card shadow-card">
                   <div className="flex items-center justify-between border-b border-border px-3 py-2 text-sm">
                     <span className="font-medium">{day(d)}</span>
                     <span className="text-xs text-muted-foreground">{r.won}W {r.lost}L{r.pending ? ` ${r.pending} waiting` : ''}{r.pct !== null ? ` · ${r.pct}%` : ''}</span>
@@ -180,29 +180,29 @@ export function PredictorGames({ todayDate, today, history }: { todayDate: strin
         <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-background p-3" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
           <div className="mx-auto max-w-3xl space-y-2">
             {slip && (
-              <div className="rounded-sm border border-border bg-card p-3">
+              <div className="rounded-xl border border-border bg-card shadow-card p-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-xs text-muted-foreground">{slip.label} · {slip.used} games{slip.totalOdds ? ` · odds ${Number(slip.totalOdds).toFixed(2)}` : ''}</p>
                     <p className="select-all font-mono text-base font-semibold tracking-wider">{slip.code}</p>
                   </div>
                   <div className="flex shrink-0 gap-1.5">
-                    <button onClick={() => { navigator.clipboard?.writeText(slip.code); setCopied(true); setTimeout(() => setCopied(false), 1500); }} className="flex items-center gap-1 rounded-sm border border-border px-2 py-1 text-xs"><Copy className="h-3 w-3" /> {copied ? 'Copied' : 'Copy'}</button>
-                    {slip.deepLink ? <a href={slip.deepLink} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 rounded-sm border border-border px-2 py-1 text-xs"><ExternalLink className="h-3 w-3" /> Open</a> : null}
+                    <button onClick={() => { navigator.clipboard?.writeText(slip.code); setCopied(true); setTimeout(() => setCopied(false), 1500); }} className="flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs"><Copy className="h-3 w-3" /> {copied ? 'Copied' : 'Copy'}</button>
+                    {slip.deepLink ? <a href={slip.deepLink} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs"><ExternalLink className="h-3 w-3" /> Open</a> : null}
                   </div>
                 </div>
                 {slip.skipped.length > 0 && <p className="mt-2 text-xs text-muted-foreground">Left out: {slip.skipped.map((s) => `${s.game} (${s.reason})`).join('; ')}</p>}
               </div>
             )}
-            {error && <p className="text-xs text-red-600">{error}</p>}
+            {error && <p className="text-xs text-risky">{error}</p>}
             <div className="flex items-center gap-2">
               <p className="min-w-0 flex-1 text-xs text-muted-foreground">
                 {chosen.length === 0 ? 'Tap games to build a slip' : <><strong className="text-foreground">{chosen.length}</strong> selected · odds <span className="font-mono">{combined.toFixed(2)}</span> · avg {Math.round(avgConf)}</>}
               </p>
-              <select value={platform} onChange={(e) => { setPlatform(e.target.value); setSlip(null); }} className="rounded-sm border border-border bg-background px-2 py-1.5 text-sm">
+              <select value={platform} onChange={(e) => { setPlatform(e.target.value); setSlip(null); }} className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm">
                 {PLATFORMS.map((p) => <option key={p.slug} value={p.slug}>{p.label}</option>)}
               </select>
-              <button onClick={create} disabled={busy || chosen.length === 0} className="rounded-sm bg-foreground px-3 py-1.5 text-sm font-medium text-background disabled:opacity-40">{busy ? 'Creating…' : 'Create code'}</button>
+              <button onClick={create} disabled={busy || chosen.length === 0} className="rounded-lg bg-foreground px-3 py-1.5 text-sm font-medium text-background disabled:opacity-40">{busy ? 'Creating…' : 'Create code'}</button>
             </div>
           </div>
         </div>

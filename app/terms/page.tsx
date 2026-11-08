@@ -20,16 +20,16 @@ export default function TermsPage() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-14">
       <nav className="flex items-center gap-1.5 text-xs text-muted-foreground mb-6 font-mono" aria-label="Breadcrumb">
-        <Link href="/" className="hover:text-[hsl(var(--verified))] transition-colors">Home</Link>
+        <Link href="/" className="hover:text-brand transition-colors">Home</Link>
         <ChevronRight className="h-3 w-3" />
         <span>Terms of Service</span>
       </nav>
 
       <div className="flex items-center gap-2 mb-2">
-        <Scale className="h-4.5 w-4.5 text-[hsl(var(--seal))]" />
-        <span className="text-xs font-mono font-semibold tracking-widest text-[hsl(var(--verified))] uppercase">Legal</span>
+        <Scale className="h-4.5 w-4.5 text-gold" />
+        <span className="text-xs font-mono font-semibold tracking-widest text-brand uppercase">Legal</span>
       </div>
-      <h1 className="font-serif text-3xl md:text-4xl font-semibold mb-1">Terms of Service</h1>
+      <h1 className="font-display text-3xl md:text-4xl font-semibold mb-1">Terms of Service</h1>
       <p className="text-xs text-muted-foreground mb-10">Last updated: September 2026</p>
 
       <div className="max-w-2xl prose prose-sm dark:prose-invert space-y-8 text-sm text-muted-foreground leading-relaxed">
@@ -53,7 +53,7 @@ export default function TermsPage() {
             <li>A stake-sizing calculator</li>
             <li>A daily, automatically generated ticket predictor</li>
           </ul>
-          <p className="mt-3 bg-muted/40 border border-border p-3 rounded-sm text-xs">
+          <p className="mt-3 bg-muted/40 border border-border p-3 rounded-lg text-xs">
             <strong>Important:</strong> BetMeter is not a bookmaker, does not accept or place
             bets, and does not hold funds. Confidence scores and predictor tickets are
             statistical analysis based on form and historical data — never a guarantee of any
@@ -106,7 +106,7 @@ export default function TermsPage() {
           <p>
             BetMeter links to third-party betting platforms and data providers, some via
             affiliate arrangements (see our{' '}
-            <Link href="/privacy" className="text-[hsl(var(--verified))] underline">Privacy Policy</Link>).
+            <Link href="/privacy" className="text-brand underline">Privacy Policy</Link>).
             We&rsquo;re not responsible for the content, accuracy, or practices of any
             third-party site.
           </p>
@@ -142,7 +142,7 @@ export default function TermsPage() {
           <h2 className="text-base font-bold text-foreground mb-2">11. Contact</h2>
           <p>
             For questions about these Terms, contact us via our{' '}
-            <Link href="/contact" className="text-[hsl(var(--verified))] underline">Contact page</Link>.
+            <Link href="/contact" className="text-brand underline">Contact page</Link>.
           </p>
         </section>
       </div>

@@ -22,14 +22,14 @@ export default function ContactPage() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-14">
       <nav className="flex items-center gap-1.5 text-xs text-muted-foreground mb-8 font-mono" aria-label="Breadcrumb">
-        <Link href="/" className="hover:text-[hsl(var(--verified))] transition-colors">Home</Link>
+        <Link href="/" className="hover:text-brand transition-colors">Home</Link>
         <ChevronRight className="h-3 w-3" />
         <span>Contact</span>
       </nav>
 
       <div className="max-w-2xl mb-10">
-        <p className="text-xs uppercase tracking-[0.14em] font-mono text-[hsl(var(--verified))] mb-2">Contact</p>
-        <h1 className="font-serif text-3xl md:text-4xl font-semibold">Get in touch</h1>
+        <p className="text-xs uppercase tracking-[0.14em] font-mono text-brand mb-2">Contact</p>
+        <h1 className="font-display text-3xl md:text-4xl font-semibold">Get in touch</h1>
         <p className="mt-3 text-muted-foreground">
           Found a bug in a tool, want a platform added, or have a partnership question? Reach us
           below.
@@ -41,29 +41,29 @@ export default function ContactPage() {
           href={TELEGRAM_BOT_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-start gap-4 p-5 border border-border bg-card rounded-sm hover:border-[hsl(var(--seal))] transition-colors group"
+          className="flex items-start gap-4 p-5 border border-border bg-card rounded-lg hover:border-gold transition-colors group"
         >
-          <div className="p-3 bg-muted rounded-sm">
-            <Send className="h-5 w-5 text-[hsl(var(--seal))]" strokeWidth={1.75} />
+          <div className="p-3 bg-muted rounded-lg">
+            <Send className="h-5 w-5 text-gold" strokeWidth={1.75} />
           </div>
           <div>
-            <p className="font-serif font-semibold text-sm">Telegram</p>
+            <p className="font-display font-semibold text-sm">Telegram</p>
             <p className="text-xs text-muted-foreground mt-1 mb-2">
               Fastest way to reach us — message the bot directly.
             </p>
-            <span className="text-xs font-semibold text-[hsl(var(--verified))]">Open chat &rarr;</span>
+            <span className="text-xs font-semibold text-brand">Open chat &rarr;</span>
           </div>
         </a>
 
         <a
           href={`mailto:${SUPPORT_EMAIL}`}
-          className="flex items-start gap-4 p-5 border border-border bg-card rounded-sm hover:border-[hsl(var(--seal))] transition-colors group"
+          className="flex items-start gap-4 p-5 border border-border bg-card rounded-lg hover:border-gold transition-colors group"
         >
-          <div className="p-3 bg-muted rounded-sm">
+          <div className="p-3 bg-muted rounded-lg">
             <Mail className="h-5 w-5 text-muted-foreground" strokeWidth={1.75} />
           </div>
           <div>
-            <p className="font-serif font-semibold text-sm">Email</p>
+            <p className="font-display font-semibold text-sm">Email</p>
             <p className="text-xs text-muted-foreground mt-1 mb-2">
               For partnership pitches and formal suggestions.
             </p>
@@ -72,7 +72,7 @@ export default function ContactPage() {
         </a>
       </div>
 
-      <div className="mt-10 flex items-center gap-3 p-4 border border-border bg-muted/40 rounded-sm max-w-xl">
+      <div className="mt-10 flex items-center gap-3 p-4 border border-border bg-muted/40 rounded-lg max-w-xl">
         <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
         <p className="text-xs text-muted-foreground leading-normal">
           Bug reports and platform requests are tracked as they come in — response times vary by volume.

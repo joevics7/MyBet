@@ -2,25 +2,19 @@
 
 import { useState } from 'react';
 import { Loader2, Search, CheckCircle2, XCircle, MinusCircle } from 'lucide-react';
+import { ScoreGauge } from '@/components/ui/ScoreGauge';
 import type { DecodeResult, NormalizedSelection } from '@/lib/services/types';
 
 import { PLATFORM_OPTIONS as PLATFORMS } from '@/lib/platformList';
 
 function ResultIcon({ selection }: { selection: NormalizedSelection }) {
   if (selection.isWinning === true) {
-    return <CheckCircle2 className="h-4 w-4 text-[hsl(var(--verified))] flex-shrink-0" />;
+    return <CheckCircle2 className="h-4 w-4 text-brand flex-shrink-0" />;
   }
   if (selection.isWinning === false) {
-    return <XCircle className="h-4 w-4 text-[hsl(var(--rust))] flex-shrink-0" />;
+    return <XCircle className="h-4 w-4 text-risky flex-shrink-0" />;
   }
   return <MinusCircle className="h-4 w-4 text-muted-foreground flex-shrink-0" />;
-}
-
-function scoreColor(score: number | null | undefined): string {
-  if (score === null || score === undefined) return 'text-muted-foreground';
-  if (score >= 70) return 'text-[hsl(var(--verified))]';
-  if (score >= 40) return 'text-amber-600';
-  return 'text-[hsl(var(--rust))]';
 }
 
 export function DecoderForm() {
@@ -63,24 +57,33 @@ export function DecoderForm() {
   }
 
   return (
-    <div className="rounded-sm border border-border bg-card p-6">
+    <div className="rounded-xl border border-border bg-card shadow-card p-6">
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
-          <label htmlFor="platform" className="text-xs font-mono uppercase tracking-wide text-muted-foreground">
+          <p id="platform-label" className="text-xs font-mono uppercase tracking-wide text-muted-foreground">
             Platform
-          </label>
-          <select
-            id="platform"
-            value={platform}
-            onChange={(e) => setPlatform(e.target.value)}
-            className="mt-1 w-full h-10 rounded-sm border border-border bg-background px-3 text-sm"
-          >
-            {PLATFORMS.map((p) => (
-              <option key={p.slug} value={p.slug}>
-                {p.label}
-              </option>
-            ))}
-          </select>
+          </p>
+          <div role="radiogroup" aria-labelledby="platform-label" className="mt-2 flex flex-wrap gap-2">
+            {PLATFORMS.map((p) => {
+              const active = platform === p.slug;
+              return (
+                <button
+                  key={p.slug}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setPlatform(p.slug)}
+                  className={`h-9 rounded-full border px-4 text-sm font-medium transition-colors ${
+                    active
+                      ? 'border-brand bg-brand/15 text-brand shadow-[0_0_16px_-6px_hsl(var(--brand)/0.8)]'
+                      : 'border-border bg-background text-muted-foreground hover:text-foreground hover:border-brand/40'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div>
@@ -93,12 +96,12 @@ export function DecoderForm() {
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="e.g. P79BMH"
-              className="flex-1 min-w-0 h-10 rounded-sm border border-border bg-background px-3 text-sm font-mono uppercase"
+              className="flex-1 min-w-0 h-11 rounded-lg border border-border bg-background px-3 text-sm font-mono uppercase focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
             <button
               type="submit"
               disabled={loading || !code.trim()}
-              className="h-10 px-4 rounded-sm bg-[hsl(var(--ink))] text-[hsl(var(--paper))] text-sm font-semibold disabled:opacity-50 flex items-center gap-2"
+              className="h-11 px-5 rounded-lg bg-brand text-brand-foreground shadow-glow text-sm font-semibold disabled:opacity-50 flex items-center gap-2"
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
               Decode
@@ -128,7 +131,7 @@ export function DecoderForm() {
       )}
 
       {error && (
-        <p className="mt-4 text-sm text-[hsl(var(--rust))] bg-[hsl(var(--rust))]/10 rounded-sm px-3 py-2">
+        <p className="mt-4 text-sm text-risky bg-risky/10 rounded-lg px-3 py-2">
           {error}
         </p>
       )}
@@ -140,7 +143,7 @@ export function DecoderForm() {
             {result.totalOdds && <span>Total odds: {result.totalOdds}</span>}
           </div>
           {result.selections.map((s, i) => (
-            <div key={i} className="rounded-sm border border-border px-3.5 py-2.5">
+            <div key={i} className="rounded-lg border border-border px-3.5 py-2.5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-sm break-words">
@@ -154,22 +157,18 @@ export function DecoderForm() {
                 </div>
               </div>
 
-              <div className="mt-2 pt-2 border-t border-border/60 space-y-1">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs text-muted-foreground">BetMeter Score</span>
-                  <span className={`text-xs font-mono font-semibold ${scoreColor(s.score)}`}>
-                    {s.score ?? '—'}
-                  </span>
+              <div className="mt-3 pt-3 border-t border-border/60 grid grid-cols-2 gap-3">
+                <div className="flex items-center gap-2.5">
+                  <ScoreGauge score={s.score} size={44} />
+                  <span className="text-xs text-muted-foreground leading-tight">BetMeter Score</span>
                 </div>
-                <div className="flex items-start justify-between gap-3">
-                  <span className="min-w-0 text-xs text-muted-foreground">
+                <div className="flex items-center gap-2.5">
+                  <ScoreGauge score={s.tipsterScore} size={44} />
+                  <span className="min-w-0 text-xs text-muted-foreground leading-tight">
                     Tipster Score
                     {s.tipsterSources && s.tipsterSources.length > 0 && (
-                      <span className="text-muted-foreground/70"> ({s.tipsterSources.join(', ')})</span>
+                      <span className="block text-muted-foreground/70 truncate">({s.tipsterSources.join(', ')})</span>
                     )}
-                  </span>
-                  <span className={`text-xs font-mono font-semibold ${scoreColor(s.tipsterScore)}`}>
-                    {s.tipsterScore ?? '—'}
                   </span>
                 </div>
               </div>

@@ -60,17 +60,17 @@ export default async function Page() {
       }
       body={
         <>
-        <Link href="/predictor/games" className="mb-4 block rounded-sm border border-border bg-card p-4 text-sm">
+        <Link href="/predictor/games" className="mb-4 block rounded-xl border border-border bg-card shadow-card p-4 text-sm">
           <span className="font-medium">All analysed games &amp; build your own slip &rarr;</span>
           <span className="mt-1 block text-xs text-muted-foreground">See every game with its confidence, pick several and create a booking code. Includes the last 3 days&rsquo; results.</span>
         </Link>
         {tickets === null ? (
-          <div className="rounded-sm border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">
+          <div className="rounded-lg border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">
             <p className="font-medium text-foreground">Not connected yet</p>
             <p className="mt-1.5">The Predictor needs Supabase configured to store and show tickets.</p>
           </div>
         ) : tickets.length === 0 ? (
-          <div className="rounded-sm border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">
+          <div className="rounded-lg border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">
             <p className="font-medium text-foreground">No tickets published yet today</p>
             <p className="mt-1.5">
               The Predictor runs each morning. Check back after it&rsquo;s run, or if it&rsquo;s

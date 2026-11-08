@@ -63,14 +63,14 @@ export function OddsBoard() {
   );
 
   return (
-    <div className="rounded-sm border border-border bg-card p-4 sm:p-6">
+    <div className="rounded-xl border border-border bg-card shadow-card p-4 sm:p-6">
       <div className="flex gap-2 overflow-x-auto max-w-full min-w-0 pb-2">
         {chips.map((c, i) => (
           <button
             key={c.from}
             onClick={() => setDay(i)}
-            className={`shrink-0 rounded-sm border px-3 py-1.5 text-xs font-mono ${
-              i === day ? 'border-[hsl(var(--ink))] bg-[hsl(var(--ink))] text-[hsl(var(--paper))]' : 'border-border'
+            className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-mono ${
+              i === day ? 'border-foreground bg-brand text-brand-foreground shadow-glow' : 'border-border'
             }`}
           >
             {c.label}
@@ -87,7 +87,7 @@ export function OddsBoard() {
             setLimit(PAGE);
           }}
           placeholder="Search team or league"
-          className="w-full h-10 rounded-sm border border-border bg-background pl-9 pr-3 text-sm"
+          className="w-full h-10 rounded-lg border border-border bg-background pl-9 pr-3 text-sm"
         />
       </div>
 
@@ -104,7 +104,7 @@ export function OddsBoard() {
           <Loader2 className="h-4 w-4 animate-spin" /> Loading odds…
         </p>
       )}
-      {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-4 text-sm text-risky">{error}</p>}
       {data && !loading && filtered.length === 0 && (
         <p className="mt-4 text-sm text-muted-foreground">{q ? 'No matches found.' : data.generatedAt ? 'No matches with odds for this day.' : 'Check back after the next refresh.'}</p>
       )}
@@ -116,7 +116,7 @@ export function OddsBoard() {
       </div>
 
       {filtered.length > limit && (
-        <button onClick={() => setLimit((l) => l + PAGE)} className="mt-4 w-full h-10 rounded-sm border border-border text-sm">
+        <button onClick={() => setLimit((l) => l + PAGE)} className="mt-4 w-full h-10 rounded-lg border border-border text-sm">
           Show more matches ({filtered.length - limit} left)
         </button>
       )}
@@ -151,7 +151,7 @@ function MatchCard({ match }: { match: DayMatch }) {
   const otherMarkets = MARKETS.filter((mk) => mk.key !== '1x2' && match.platforms.some((p) => p.odds[mk.key]));
 
   return (
-    <div className="rounded-sm border border-border p-3">
+    <div className="rounded-lg border border-border p-3">
       <div className="flex items-baseline justify-between gap-2">
         <p className="min-w-0 break-words text-sm font-medium">
           {match.home} v {match.away}
@@ -223,7 +223,7 @@ function Grid({
             return (
               <span
                 key={i}
-                className={`text-right font-mono ${v !== null && v === best[i] ? 'font-semibold text-[hsl(var(--verified))]' : ''}`}
+                className={`text-right font-mono ${v !== null && v === best[i] ? 'font-semibold text-brand' : ''}`}
               >
                 {v !== null ? v.toFixed(2) : '—'}
               </span>

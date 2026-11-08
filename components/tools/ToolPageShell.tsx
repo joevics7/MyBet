@@ -17,9 +17,10 @@ interface ToolPageShellProps {
 
 export function ToolPageShell({ title, tagline, status, body, howItWorks, faq = [] }: ToolPageShellProps) {
   return (
-    <div className="max-w-6xl mx-auto w-full min-w-0 px-4 py-10">
+    <div className="relative max-w-6xl mx-auto w-full min-w-0 px-4 py-10">
+      <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-72 bg-hero-glow opacity-60" aria-hidden />
       <nav className="text-xs text-muted-foreground mb-6 flex flex-wrap items-center gap-1.5 font-mono">
-        <Link href="/tools" className="hover:text-[hsl(var(--verified))]">Tools</Link>
+        <Link href="/tools" className="hover:text-brand">Tools</Link>
         <span>/</span>
         <span className="text-foreground">{title}</span>
       </nav>
@@ -27,7 +28,7 @@ export function ToolPageShell({ title, tagline, status, body, howItWorks, faq = 
       <div className="grid grid-cols-1 md:grid-cols-[1.15fr_1fr] gap-10">
         <div className="min-w-0">
           <div className="flex items-center gap-3 mb-2">
-            <p className="text-xs uppercase tracking-[0.14em] font-mono text-[hsl(var(--verified))]">
+            <p className="text-xs uppercase tracking-[0.14em] font-mono text-brand">
               BetMeter tool
             </p>
             {status === 'soon' && (
@@ -36,19 +37,19 @@ export function ToolPageShell({ title, tagline, status, body, howItWorks, faq = 
               </span>
             )}
           </div>
-          <h1 className="font-serif text-3xl md:text-4xl font-semibold leading-tight">{title}</h1>
+          <h1 className="font-display text-3xl md:text-5xl font-bold leading-tight">{title}</h1>
           <p className="mt-3 text-muted-foreground max-w-lg">{tagline}</p>
 
           {howItWorks && (
-            <div className="mt-8 prose prose-sm max-w-none prose-headings:font-serif prose-headings:font-semibold">
-              <h2 className="font-serif text-xl font-semibold">How it works</h2>
+            <div className="mt-8 prose prose-sm max-w-none prose-headings:font-display prose-headings:font-semibold">
+              <h2 className="font-display text-xl font-semibold">How it works</h2>
               {howItWorks}
             </div>
           )}
 
           {faq.length > 0 && (
             <div className="mt-10">
-              <h2 className="font-serif text-xl font-semibold mb-3">FAQ</h2>
+              <h2 className="font-display text-xl font-semibold mb-3">FAQ</h2>
               <dl className="divide-y divide-border border-t border-border">
                 {faq.map((f) => (
                   <div key={f.question} className="py-4">

@@ -26,11 +26,11 @@ interface VaultUser {
 
 function StatusBadge({ status }: { status: VaultEntry['status'] }) {
   const map: Record<VaultEntry['status'], { icon: typeof CheckCircle2; className: string; label: string }> = {
-    won: { icon: CheckCircle2, className: 'text-[hsl(var(--verified))]', label: 'Won' },
-    lost: { icon: XCircle, className: 'text-[hsl(var(--rust))]', label: 'Lost' },
+    won: { icon: CheckCircle2, className: 'text-brand', label: 'Won' },
+    lost: { icon: XCircle, className: 'text-risky', label: 'Lost' },
     void: { icon: HelpCircle, className: 'text-muted-foreground', label: 'Void' },
     unable_to_check: { icon: HelpCircle, className: 'text-muted-foreground', label: 'Can\u2019t auto-check' },
-    pending: { icon: Clock, className: 'text-amber-600', label: 'Pending' },
+    pending: { icon: Clock, className: 'text-medium', label: 'Pending' },
   };
   const { icon: Icon, className, label } = map[status];
   return (
@@ -98,9 +98,9 @@ function ConnectTelegram({ onConnected }: { onConnected: () => void }) {
   }, [token]);
 
   return (
-    <div className="rounded-sm border border-border bg-card p-6">
+    <div className="rounded-xl border border-border bg-card shadow-card p-6">
       <div className="flex items-center gap-2 mb-1">
-        <Send className="h-4 w-4 text-[hsl(var(--seal))]" />
+        <Send className="h-4 w-4 text-gold" />
         <p className="text-sm font-medium">Connect Telegram to use the Vault</p>
       </div>
       <p className="text-xs text-muted-foreground mb-4">
@@ -113,7 +113,7 @@ function ConnectTelegram({ onConnected }: { onConnected: () => void }) {
             href={deepLink}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex h-10 items-center gap-2 rounded-sm bg-[hsl(var(--ink))] px-4 text-sm font-semibold text-[hsl(var(--paper))]"
+            className="inline-flex h-10 items-center gap-2 rounded-lg bg-foreground px-4 text-sm font-semibold text-background"
           >
             <Send className="h-4 w-4" /> Open Telegram
           </a>
@@ -125,14 +125,14 @@ function ConnectTelegram({ onConnected }: { onConnected: () => void }) {
         <button
           onClick={handleStart}
           disabled={starting}
-          className="inline-flex h-10 items-center gap-2 rounded-sm bg-[hsl(var(--ink))] px-4 text-sm font-semibold text-[hsl(var(--paper))] disabled:opacity-50"
+          className="inline-flex h-10 items-center gap-2 rounded-lg bg-foreground px-4 text-sm font-semibold text-background disabled:opacity-50"
         >
           {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           Connect with Telegram
         </button>
       )}
 
-      {error && <p className="mt-3 text-xs text-[hsl(var(--rust))]">{error}</p>}
+      {error && <p className="mt-3 text-xs text-risky">{error}</p>}
     </div>
   );
 }
@@ -254,24 +254,24 @@ export function VaultManager() {
         <p className="min-w-0 text-xs text-muted-foreground truncate">Connected as {displayName}</p>
         <button
           onClick={handleSignOut}
-          className="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-[hsl(var(--rust))]"
+          className="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-risky"
         >
           <LogOut className="h-3.5 w-3.5" /> Disconnect
         </button>
       </div>
 
-      <div className="rounded-sm border border-border bg-muted/40 p-4 flex items-center gap-2">
-        <CheckCircle2 className="h-4 w-4 shrink-0 text-[hsl(var(--verified))]" />
+      <div className="rounded-lg border border-border bg-muted/40 p-4 flex items-center gap-2">
+        <CheckCircle2 className="h-4 w-4 shrink-0 text-brand" />
         <p className="text-sm">Telegram alerts are on. Saved codes are checked hourly.</p>
       </div>
 
-      <form onSubmit={handleSave} className="rounded-sm border border-border bg-card p-5 space-y-3">
+      <form onSubmit={handleSave} className="rounded-xl border border-border bg-card shadow-card p-5 space-y-3">
         <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Save a code</p>
         <div className="flex gap-2">
           <select
             value={platform}
             onChange={(e) => setPlatform(e.target.value)}
-            className="h-10 min-w-0 max-w-[38%] rounded-sm border border-border bg-background px-2 text-sm"
+            className="h-10 min-w-0 max-w-[38%] rounded-lg border border-border bg-background px-2 text-sm"
           >
             {PLATFORMS.map((p) => (
               <option key={p.slug} value={p.slug}>{p.label}</option>
@@ -281,18 +281,18 @@ export function VaultManager() {
             value={code}
             onChange={(e) => setCode(e.target.value)}
             placeholder="Booking code"
-            className="flex-1 min-w-0 h-10 rounded-sm border border-border bg-background px-3 text-sm font-mono uppercase"
+            className="flex-1 min-w-0 h-10 rounded-lg border border-border bg-background px-3 text-sm font-mono uppercase"
           />
           <button
             type="submit"
             disabled={saving || !code.trim()}
-            className="h-10 px-4 rounded-sm bg-[hsl(var(--ink))] text-[hsl(var(--paper))] text-sm font-semibold disabled:opacity-50 flex items-center gap-1.5 flex-shrink-0"
+            className="h-10 px-4 rounded-lg bg-brand text-brand-foreground shadow-glow text-sm font-semibold disabled:opacity-50 flex items-center gap-1.5 flex-shrink-0"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             Save
           </button>
         </div>
-        {saveError && <p className="text-xs text-[hsl(var(--rust))]">{saveError}</p>}
+        {saveError && <p className="text-xs text-risky">{saveError}</p>}
       </form>
 
       <div className="space-y-2">
@@ -304,7 +304,7 @@ export function VaultManager() {
           <p className="text-sm text-muted-foreground text-center py-6">No saved codes yet.</p>
         ) : (
           entries.map((entry) => (
-            <div key={entry.id} className="flex items-center justify-between gap-3 rounded-sm border border-border px-4 py-3">
+            <div key={entry.id} className="flex items-center justify-between gap-3 rounded-lg border border-border px-4 py-3">
               <div className="min-w-0">
                 <p className="text-sm font-mono break-words">
                   {entry.code} <span className="text-muted-foreground font-sans">— {entry.platforms?.name ?? 'Unknown'}</span>
@@ -320,7 +320,7 @@ export function VaultManager() {
                   <button
                     onClick={() => handleCheck(entry.id)}
                     disabled={checkingId === entry.id}
-                    className="h-8 w-8 flex items-center justify-center rounded-sm border border-border hover:border-[hsl(var(--seal))] disabled:opacity-50"
+                    className="h-8 w-8 flex items-center justify-center rounded-lg border border-border hover:border-gold disabled:opacity-50"
                     aria-label="Check now"
                   >
                     {checkingId === entry.id ? (

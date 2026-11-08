@@ -6,7 +6,8 @@ import { Footer } from '@/components/layout/Footer';
 import { BottomNav } from '@/components/layout/BottomNav';
 import { CookieBanner } from '@/components/CookieBanner';
 import { Toaster } from '@/components/ui/toaster';
-import { fraunces, inter, plexMono } from '@/lib/fonts';
+import { display, inter, plexMono } from '@/lib/fonts';
+import { ThemeProvider } from '@/components/theme/ThemeProvider';
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://betmeter.com';
 
@@ -17,11 +18,13 @@ export const metadata: Metadata = {
     template: '%s | BetMeter',
   },
   description: 'Decode, convert, split, and check booking codes with a confidence score on every selection. Telegram bot + web tools for smarter betting slips.',
-  themeColor: '#0F1B33',
+  themeColor: [
+    { media: '(prefers-color-scheme: dark)', color: '#0A0E17' },
+    { media: '(prefers-color-scheme: light)', color: '#F5F7FB' },
+  ],
   viewport: {
     width: 'device-width',
     initialScale: 1,
-    maximumScale: 1,
   },
   icons: {
     icon: '/favicon.ico',
@@ -50,7 +53,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${fraunces.variable} ${inter.variable} ${plexMono.variable}`}
+      className={`${display.variable} ${inter.variable} ${plexMono.variable}`}
     >
       <head>
         <Script id="consent-default" strategy="beforeInteractive">
@@ -72,14 +75,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             affiliate programs instead, per the product spec. */}
       </head>
       <body>
-        <div className="min-h-screen flex flex-col pb-16 md:pb-0">
-          <Header />
-          <main className="flex-1">{children}</main>
-          <Footer />
-        </div>
-        <BottomNav />
-        <Toaster />
-        <CookieBanner />
+        <ThemeProvider>
+          <div className="min-h-screen flex flex-col pb-16 md:pb-0">
+            <Header />
+            <main className="flex-1">{children}</main>
+            <Footer />
+          </div>
+          <BottomNav />
+          <Toaster />
+          <CookieBanner />
+        </ThemeProvider>
       </body>
     </html>
   );

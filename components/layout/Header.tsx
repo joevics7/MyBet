@@ -1,47 +1,56 @@
 import Link from 'next/link';
-import { Send } from 'lucide-react';
+import { Gauge, Send } from 'lucide-react';
+import { ThemeToggle } from '@/components/theme/ThemeToggle';
 
 const TELEGRAM_BOT_URL = process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL || 'https://t.me/BetsMeterBot';
 
+const NAV = [
+  { href: '/tools', label: 'Tools' },
+  { href: '/tools/vault', label: 'Vault' },
+  { href: '/predictor', label: 'Predictor' },
+  { href: '/faq', label: 'FAQ' },
+];
+
 export function Header() {
   return (
-    <header className="sticky top-0 z-30 bg-[hsl(var(--paper))]/95 backdrop-blur border-b border-border">
+    <header className="sticky top-0 z-30 glass border-b border-border">
       <div className="max-w-6xl mx-auto px-4">
-        <div className="flex items-center justify-between h-16">
-          <Link href="/" className="flex items-baseline gap-2">
-            <span className="font-serif text-2xl font-semibold tracking-tight text-[hsl(var(--ink))]">
-              BetMeter
+        <div className="flex items-center justify-between h-16 gap-3">
+          <Link href="/" className="flex items-center gap-2.5">
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand text-brand-foreground shadow-glow">
+              <Gauge className="h-5 w-5" strokeWidth={2.5} />
             </span>
-            <span className="hidden sm:inline text-[10px] uppercase tracking-[0.16em] text-[hsl(var(--verified))] font-mono">
+            <span className="font-display text-xl font-bold tracking-tight">BetMeter</span>
+            <span className="hidden lg:inline text-[10px] uppercase tracking-[0.16em] text-brand font-mono">
               know before you bet
             </span>
           </Link>
 
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
-            <Link href="/tools" className="hover:text-[hsl(var(--verified))] transition-colors">
-              Tools
-            </Link>
-            <Link href="/tools/vault" className="hover:text-[hsl(var(--verified))] transition-colors">
-              Vault
-            </Link>
-            <Link href="/predictor" className="hover:text-[hsl(var(--verified))] transition-colors">
-              Predictor
-            </Link>
-            <Link href="/faq" className="hover:text-[hsl(var(--verified))] transition-colors">
-              FAQ
-            </Link>
+          <nav className="hidden md:flex items-center gap-1 text-sm font-medium">
+            {NAV.map((n) => (
+              <Link
+                key={n.href}
+                href={n.href}
+                className="rounded-full px-3.5 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              >
+                {n.label}
+              </Link>
+            ))}
           </nav>
 
-          <Link
-            href={TELEGRAM_BOT_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Open BetMeter on Telegram"
-            className="flex items-center gap-1.5 h-9 px-3.5 rounded-full border border-border hover:border-[hsl(var(--verified))] hover:text-[hsl(var(--verified))] transition-colors text-xs font-semibold"
-          >
-            <Send className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Open bot</span>
-          </Link>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <Link
+              href={TELEGRAM_BOT_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Open BetMeter on Telegram"
+              className="flex items-center gap-1.5 h-9 px-3.5 rounded-full bg-brand text-brand-foreground hover:opacity-90 transition-opacity text-xs font-semibold shadow-glow"
+            >
+              <Send className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Open bot</span>
+            </Link>
+          </div>
         </div>
       </div>
     </header>

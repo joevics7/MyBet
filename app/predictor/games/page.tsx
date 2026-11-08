@@ -37,7 +37,7 @@ export default async function Page() {
       }
       body={
         rows === null ? (
-          <div className="rounded-sm border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">Not connected yet.</div>
+          <div className="rounded-lg border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground">Not connected yet.</div>
         ) : (
           <PredictorGames todayDate={todayDate} today={rows.filter((g) => g.game_date === todayDate)} history={rows} />
         )

@@ -30,7 +30,7 @@ function Section({ title, summary, error, children }: { title: string; summary: 
     <section className="mb-10">
       <h2 className="font-bold mb-2">
         {title} &mdash; {summary}
-        {error && <span className="text-[hsl(var(--rust))]"> (ERROR: {error})</span>}
+        {error && <span className="text-risky"> (ERROR: {error})</span>}
       </h2>
       {children}
     </section>
@@ -38,7 +38,7 @@ function Section({ title, summary, error, children }: { title: string; summary: 
 }
 
 function Box({ children }: { children: ReactNode }) {
-  return <div className="space-y-1.5 max-h-[600px] overflow-auto border border-border rounded-sm p-3 bg-card">{children}</div>;
+  return <div className="space-y-1.5 max-h-[600px] overflow-auto border border-border rounded-lg p-3 bg-card">{children}</div>;
 }
 
 function Facts({ items }: { items: [string, string | number | null][] }) {
@@ -59,7 +59,7 @@ function Raw({ title, text }: { title: string; text: string | null }) {
       <summary className="cursor-pointer font-bold">
         {title} &mdash; {text ? `${text.length} chars` : 'nothing fetched'}
       </summary>
-      <div className="mt-2 max-h-[600px] overflow-auto border border-border rounded-sm p-3 bg-card whitespace-pre-wrap break-words">
+      <div className="mt-2 max-h-[600px] overflow-auto border border-border rounded-lg p-3 bg-card whitespace-pre-wrap break-words">
         {text ? text.slice(0, 15000) : <span className="text-muted-foreground">No content.</span>}
         {text && text.length > 15000 && <p className="text-muted-foreground mt-2">... truncated, {text.length - 15000} more chars</p>}
       </div>

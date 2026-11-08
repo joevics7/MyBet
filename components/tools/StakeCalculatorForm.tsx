@@ -29,23 +29,23 @@ function newRow(): SelectionRow {
 
 function ResultCard({ title, result }: { title: string; result: KellyResult }) {
   return (
-    <div className="rounded-sm border border-border bg-card p-4">
+    <div className="rounded-xl border border-border bg-card shadow-card p-4">
       <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground mb-2">{title}</p>
 
       {result.warning === 'negative_edge' && (
-        <div className="flex items-start gap-2 mb-3 text-xs text-[hsl(var(--rust))] bg-[hsl(var(--rust))]/10 rounded-sm px-3 py-2">
+        <div className="flex items-start gap-2 mb-3 text-xs text-risky bg-risky/10 rounded-lg px-3 py-2">
           <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
           <span>This confidence level doesn&rsquo;t justify these odds. Consider skipping this bet.</span>
         </div>
       )}
       {result.warning === 'low_edge' && (
-        <div className="flex items-start gap-2 mb-3 text-xs text-amber-700 bg-amber-500/10 rounded-sm px-3 py-2">
+        <div className="flex items-start gap-2 mb-3 text-xs text-medium bg-medium/10 rounded-lg px-3 py-2">
           <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
           <span>Positive but thin edge — the recommended stake is small on purpose.</span>
         </div>
       )}
 
-      <p className="text-2xl font-serif font-semibold">
+      <p className="text-2xl font-display font-semibold">
         ₦{result.recommendedStake.toLocaleString(undefined, { maximumFractionDigits: 0 })}
       </p>
       <p className="text-xs text-muted-foreground mt-1">
@@ -124,7 +124,7 @@ export function StakeCalculatorForm() {
       : null;
 
   return (
-    <div className="rounded-sm border border-border bg-card p-6 space-y-5">
+    <div className="rounded-xl border border-border bg-card shadow-card p-6 space-y-5">
       <div>
         <label htmlFor="bankroll" className="text-xs font-mono uppercase tracking-wide text-muted-foreground">
           Bankroll (₦)
@@ -136,7 +136,7 @@ export function StakeCalculatorForm() {
           value={bankroll}
           onChange={(e) => updateBankroll(e.target.value)}
           placeholder="e.g. 50000"
-          className="mt-1 w-full h-10 rounded-sm border border-border bg-background px-3 text-sm"
+          className="mt-1 w-full h-10 rounded-lg border border-border bg-background px-3 text-sm"
         />
       </div>
 
@@ -150,10 +150,10 @@ export function StakeCalculatorForm() {
               key={f.value}
               type="button"
               onClick={() => setKellyFraction(f.value)}
-              className={`flex-1 h-9 rounded-sm text-xs font-semibold border transition-colors ${
+              className={`flex-1 h-9 rounded-lg text-xs font-semibold border transition-colors ${
                 kellyFraction === f.value
-                  ? 'bg-[hsl(var(--ink))] text-[hsl(var(--paper))] border-[hsl(var(--ink))]'
-                  : 'border-border hover:border-[hsl(var(--seal))]'
+                  ? 'bg-brand text-brand-foreground shadow-glow border-foreground'
+                  : 'border-border hover:border-gold'
               }`}
             >
               {f.label}
@@ -177,7 +177,7 @@ export function StakeCalculatorForm() {
                 value={row.odds}
                 onChange={(e) => updateRow(row.id, 'odds', e.target.value)}
                 placeholder="Odds e.g. 1.85"
-                className="flex-1 min-w-0 h-9 rounded-sm border border-border bg-background px-2.5 text-sm"
+                className="flex-1 min-w-0 h-9 rounded-lg border border-border bg-background px-2.5 text-sm"
               />
               <input
                 type="number"
@@ -186,13 +186,13 @@ export function StakeCalculatorForm() {
                 value={row.confidence}
                 onChange={(e) => updateRow(row.id, 'confidence', e.target.value)}
                 placeholder="Confidence %"
-                className="w-24 sm:w-28 min-w-0 shrink-0 h-9 rounded-sm border border-border bg-background px-2.5 text-sm"
+                className="w-24 sm:w-28 min-w-0 shrink-0 h-9 rounded-lg border border-border bg-background px-2.5 text-sm"
               />
               <button
                 type="button"
                 onClick={() => removeRow(row.id)}
                 disabled={selections.length === 1}
-                className="h-9 w-9 flex items-center justify-center rounded-sm border border-border text-muted-foreground hover:text-[hsl(var(--rust))] hover:border-[hsl(var(--rust))] disabled:opacity-30 flex-shrink-0"
+                className="h-9 w-9 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-risky hover:border-risky disabled:opacity-30 flex-shrink-0"
                 aria-label="Remove selection"
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -203,7 +203,7 @@ export function StakeCalculatorForm() {
         <button
           type="button"
           onClick={addRow}
-          className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-[hsl(var(--verified))]"
+          className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-brand"
         >
           <Plus className="h-3.5 w-3.5" /> Add selection
         </button>

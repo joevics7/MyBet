@@ -8,9 +8,9 @@ import type { ConvertResult } from '@/lib/converter/convert';
 // Same bands the Decoder uses for the BetMeter Score.
 function scoreTone(score: number | null): string {
   if (score === null) return 'text-muted-foreground';
-  if (score >= 70) return 'border-[hsl(var(--verified))] text-[hsl(var(--verified))]';
-  if (score >= 40) return 'border-amber-600 text-amber-600';
-  return 'border-red-600 text-red-600';
+  if (score >= 70) return 'border-brand text-brand';
+  if (score >= 40) return 'border-medium text-medium';
+  return 'border-risky text-risky';
 }
 
 export function ConverterForm() {
@@ -57,11 +57,11 @@ export function ConverterForm() {
     }
   }
 
-  const select = 'mt-1 w-full rounded-sm border border-border bg-background px-3 py-2 text-sm';
+  const select = 'mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm';
   const label = 'text-xs font-mono uppercase tracking-wide text-muted-foreground';
 
   return (
-    <div className="rounded-sm border border-border bg-card p-6">
+    <div className="rounded-xl border border-border bg-card shadow-card p-6">
       <form onSubmit={handleSubmit} className="space-y-3">
         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-2">
           <div>
@@ -90,7 +90,7 @@ export function ConverterForm() {
             value={code}
             onChange={(e) => setCode(e.target.value)}
             placeholder="Paste the code to convert"
-            className="mt-1 w-full h-10 rounded-sm border border-border bg-background px-3 text-sm font-mono"
+            className="mt-1 w-full h-10 rounded-lg border border-border bg-background px-3 text-sm font-mono"
           />
         </div>
 
@@ -99,31 +99,31 @@ export function ConverterForm() {
           Remove games that have already started
         </label>
 
-        {same && <p className="text-xs text-red-600">Choose two different platforms.</p>}
+        {same && <p className="text-xs text-risky">Choose two different platforms.</p>}
         <button
           type="submit"
           disabled={loading || !code.trim() || same}
-          className="w-full h-10 rounded-sm bg-[hsl(var(--ink))] text-[hsl(var(--paper))] text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
+          className="w-full h-10 rounded-lg bg-brand text-brand-foreground shadow-glow text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
         >
           {loading && <Loader2 className="h-4 w-4 animate-spin" />}
           {loading ? 'Converting…' : 'Convert code'}
         </button>
       </form>
 
-      {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-4 text-sm text-risky">{error}</p>}
 
       {result && (
         <div className="mt-6 space-y-4">
           {result.newCode ? (
-            <div className="rounded-sm border border-[hsl(var(--verified))] p-4 text-center">
+            <div className="rounded-lg border border-brand p-4 text-center">
               <p className={label}>Your {result.target.label} code</p>
               <p className="mt-1 select-all font-mono text-2xl font-semibold tracking-wider">{result.newCode}</p>
               <div className="mt-3 flex justify-center gap-2">
-                <button onClick={() => copy(result.newCode!)} className="flex items-center gap-1.5 rounded-sm border border-border px-3 py-1.5 text-xs">
+                <button onClick={() => copy(result.newCode!)} className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs">
                   <Copy className="h-3.5 w-3.5" /> {copied ? 'Copied' : 'Copy'}
                 </button>
                 {result.deepLink && (
-                  <a href={result.deepLink} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 rounded-sm border border-border px-3 py-1.5 text-xs">
+                  <a href={result.deepLink} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs">
                     <ExternalLink className="h-3.5 w-3.5" /> Open on {result.target.label}
                   </a>
                 )}
@@ -136,7 +136,7 @@ export function ConverterForm() {
               </p>
             </div>
           ) : (
-            <div className="rounded-sm border border-border p-4 text-sm">
+            <div className="rounded-lg border border-border p-4 text-sm">
               We couldn't create a {result.target.label} code, because none of the picks could be matched. The reasons are listed below.
             </div>
           )}
@@ -155,13 +155,13 @@ export function ConverterForm() {
 
           <ul className="space-y-2">
             {result.legs.map((l, i) => (
-              <li key={i} className="flex items-start gap-2.5 rounded-sm border border-border p-3">
+              <li key={i} className="flex items-start gap-2.5 rounded-lg border border-border p-3">
                 {l.status === 'converted' ? (
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[hsl(var(--verified))]" />
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
                 ) : l.status === 'dropped' ? (
                   <MinusCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                 ) : (
-                  <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                  <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-risky" />
                 )}
                 <div className="min-w-0 flex-1">
                   <p className="break-words text-sm font-medium">{l.homeTeam} v {l.awayTeam}</p>
@@ -169,7 +169,7 @@ export function ConverterForm() {
                   {l.reason && <p className="mt-0.5 text-xs text-muted-foreground">{l.reason}</p>}
                   {l.status !== 'dropped' && (
                     <p className="mt-1.5">
-                      <span className={`rounded-sm border px-1.5 py-0.5 text-[10px] font-mono uppercase ${scoreTone(l.score)}`}>
+                      <span className={`rounded-lg border px-1.5 py-0.5 text-[10px] font-mono uppercase ${scoreTone(l.score)}`}>
                         {l.score !== null ? `Confidence ${l.score}` : 'Not scored'}
                       </span>
                     </p>
@@ -178,7 +178,7 @@ export function ConverterForm() {
                 <div className="shrink-0 text-right font-mono text-xs">
                   <p>{l.sourceOdds.toFixed(2)}</p>
                   {l.status === 'converted' && l.targetOdds !== null && (
-                    <p className={l.targetOdds >= l.sourceOdds ? 'text-[hsl(var(--verified))]' : 'text-muted-foreground'}>
+                    <p className={l.targetOdds >= l.sourceOdds ? 'text-brand' : 'text-muted-foreground'}>
                       → {l.targetOdds.toFixed(2)}
                     </p>
                   )}
