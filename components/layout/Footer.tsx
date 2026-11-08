@@ -17,6 +17,7 @@ const columns = [
     links: [
       { label: 'Daily predictor', href: '/predictor' },
       { label: 'All tools', href: '/tools' },
+      { label: 'Blog', href: '/blog' },
     ],
   },
   {

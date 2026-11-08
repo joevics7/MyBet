@@ -1,15 +1,19 @@
 import { Metadata } from 'next';
+import { toolMetadata } from '@/lib/seo/toolMetadata';
 import { ToolPageShell } from '@/components/tools/ToolPageShell';
 import { StakeCalculatorForm } from '@/components/tools/StakeCalculatorForm';
 
-export const metadata: Metadata = {
+export async function generateMetadata(): Promise<Metadata> {
+  return toolMetadata('stake-calculator', {
   title: 'Smart Stake Calculator',
   description: 'Confidence-driven fractional Kelly sizing, with hard guardrails.',
-};
+});
+}
 
 export default function Page() {
   return (
     <ToolPageShell
+      slug="stake-calculator"
       title="Smart Stake Calculator"
       tagline="Confidence-driven fractional Kelly sizing, with hard guardrails."
       status="live"

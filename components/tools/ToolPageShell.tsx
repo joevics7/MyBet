@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { ReactNode } from 'react';
+import { ToolSeoContent } from '@/components/content/ToolSeoContent';
 
 interface FaqItem {
   question: string;
@@ -7,6 +8,8 @@ interface FaqItem {
 }
 
 interface ToolPageShellProps {
+  /** tool_translations.tool_slug — enables writer-managed SEO content + FAQ under the tool. */
+  slug?: string;
   title: string;
   tagline: string;
   status: 'live' | 'soon';
@@ -15,7 +18,7 @@ interface ToolPageShellProps {
   faq?: FaqItem[];
 }
 
-export function ToolPageShell({ title, tagline, status, body, howItWorks, faq = [] }: ToolPageShellProps) {
+export function ToolPageShell({ slug, title, tagline, status, body, howItWorks, faq = [] }: ToolPageShellProps) {
   return (
     <div className="relative max-w-6xl mx-auto w-full min-w-0 px-4 py-10">
       <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-72 bg-hero-glow opacity-60" aria-hidden />
@@ -66,6 +69,8 @@ export function ToolPageShell({ title, tagline, status, body, howItWorks, faq = 
           <div className="md:sticky md:top-24">{body}</div>
         </div>
       </div>
+
+      {slug && <ToolSeoContent slug={slug} />}
     </div>
   );
 }

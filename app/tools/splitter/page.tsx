@@ -1,15 +1,19 @@
 import { Metadata } from 'next';
+import { toolMetadata } from '@/lib/seo/toolMetadata';
 import { ToolPageShell } from '@/components/tools/ToolPageShell';
 import { SplitterForm } from '@/components/tools/SplitterForm';
 
-export const metadata: Metadata = {
+export async function generateMetadata(): Promise<Metadata> {
+  return toolMetadata('splitter', {
   title: 'Bet Splitter by Risk',
   description: 'Break a big ticket into risk-tiered slips, automatically or by hand.',
-};
+});
+}
 
 export default function Page() {
   return (
     <ToolPageShell
+      slug="splitter"
       title="Bet Splitter by Risk"
       tagline="Break a big ticket into risk-tiered slips, automatically or by hand."
       status="live"

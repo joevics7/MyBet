@@ -1,15 +1,19 @@
 import { Metadata } from 'next';
+import { toolMetadata } from '@/lib/seo/toolMetadata';
 import { ToolPageShell } from '@/components/tools/ToolPageShell';
 import { OddsBoard } from '@/components/tools/OddsBoard';
 
-export const metadata: Metadata = {
+export async function generateMetadata(): Promise<Metadata> {
+  return toolMetadata('odds-comparison', {
   title: 'Odds Comparison',
   description: "Today's football matches with odds from as many bookmakers as possible, side by side.",
-};
+});
+}
 
 export default function Page() {
   return (
     <ToolPageShell
+      slug="odds-comparison"
       title="Odds Comparison"
       tagline="Today's matches with odds from as many bookmakers as possible."
       status="live"

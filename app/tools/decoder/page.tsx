@@ -1,15 +1,19 @@
 import { Metadata } from 'next';
+import { toolMetadata } from '@/lib/seo/toolMetadata';
 import { ToolPageShell } from '@/components/tools/ToolPageShell';
 import { DecoderForm } from '@/components/tools/DecoderForm';
 
-export const metadata: Metadata = {
+export async function generateMetadata(): Promise<Metadata> {
+  return toolMetadata('decoder', {
   title: 'Booking Code Decoder + Confidence Score',
   description: 'Paste a code, see every selection scored for risk before you commit.',
-};
+});
+}
 
 export default function Page() {
   return (
     <ToolPageShell
+      slug="decoder"
       title="Booking Code Decoder + Confidence Score"
       tagline="Paste a code, see every selection scored for risk before you commit."
       status="live"

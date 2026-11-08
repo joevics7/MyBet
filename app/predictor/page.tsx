@@ -1,4 +1,5 @@
 import { Metadata } from 'next';
+import { toolMetadata } from '@/lib/seo/toolMetadata';
 import { ToolPageShell } from '@/components/tools/ToolPageShell';
 import { PredictorTickets, type PredictorTicket, type PredictorSelection } from '@/components/tools/PredictorTickets';
 import Link from 'next/link';
@@ -6,10 +7,12 @@ import { supabase } from '@/lib/supabase';
 
 export const revalidate = 3600; // tickets only change once/day, via the cron job
 
-export const metadata: Metadata = {
+export async function generateMetadata(): Promise<Metadata> {
+  return toolMetadata('predictor', {
   title: 'Daily AI Predictor',
   description: "Two sets of daily tickets, one per odds band, built from the day's highest-confidence selections.",
-};
+});
+}
 
 async function getTodaysTickets(): Promise<PredictorTicket[] | null> {
   if (!supabase) return null; // Supabase not configured yet
@@ -44,6 +47,7 @@ export default async function Page() {
   const tickets = await getTodaysTickets();
   return (
     <ToolPageShell
+      slug="predictor"
       title="Daily AI Predictor"
       tagline="Two sets of daily tickets, one per odds band, built from the day's highest-confidence selections."
       status="live" // the empty state below explains when today's tickets aren't published yet

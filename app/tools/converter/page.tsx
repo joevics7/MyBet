@@ -1,15 +1,19 @@
 import { Metadata } from 'next';
+import { toolMetadata } from '@/lib/seo/toolMetadata';
 import { ToolPageShell } from '@/components/tools/ToolPageShell';
 import { ConverterForm } from '@/components/tools/ConverterForm';
 
-export const metadata: Metadata = {
+export async function generateMetadata(): Promise<Metadata> {
+  return toolMetadata('converter', {
   title: 'Booking Code Converter + Smart Filter',
   description: 'Move a slip from one platform to another without losing selections.',
-};
+});
+}
 
 export default function Page() {
   return (
     <ToolPageShell
+      slug="converter"
       title="Booking Code Converter + Smart Filter"
       tagline="Move a slip from one platform to another without losing selections."
       status="live"

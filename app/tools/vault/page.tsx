@@ -1,15 +1,19 @@
 import { Metadata } from 'next';
+import { toolMetadata } from '@/lib/seo/toolMetadata';
 import { ToolPageShell } from '@/components/tools/ToolPageShell';
 import { VaultManager } from '@/components/tools/VaultManager';
 
-export const metadata: Metadata = {
+export async function generateMetadata(): Promise<Metadata> {
+  return toolMetadata('vault', {
   title: 'Bet Code Vault + Auto Result Checker',
   description: "Save a code once — get a plain-language result when every leg settles.",
-};
+});
+}
 
 export default function Page() {
   return (
     <ToolPageShell
+      slug="vault"
       title="Bet Code Vault + Auto Result Checker"
       tagline="Save a code once — get a plain-language result when every leg settles."
       status="live"
