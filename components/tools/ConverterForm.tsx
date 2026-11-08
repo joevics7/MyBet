@@ -157,7 +157,7 @@ export function ConverterForm() {
             {result.legs.map((l, i) => (
               <li key={i} className="flex items-start gap-2.5 rounded-lg border border-border p-3">
                 {l.status === 'converted' ? (
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-safe" />
                 ) : l.status === 'dropped' ? (
                   <MinusCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                 ) : (

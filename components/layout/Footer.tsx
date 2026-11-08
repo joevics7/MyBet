@@ -39,7 +39,7 @@ const columns = [
 
 export function Footer() {
   return (
-    <footer className="border-t border-border bg-brand text-brand-foreground shadow-glow/90 mt-20">
+    <footer className="border-t border-footer-foreground/10 bg-footer text-footer-foreground/90 mt-20">
       <div className="max-w-6xl mx-auto px-4 py-14 grid grid-cols-2 md:grid-cols-6 gap-8">
         <div className="col-span-2">
           <p className="font-display text-xl font-semibold text-footer-foreground">BetMeter</p>
@@ -50,7 +50,7 @@ export function Footer() {
         </div>
         {columns.map((col) => (
           <div key={col.heading}>
-            <p className="text-xs uppercase tracking-[0.14em] text-brand font-mono mb-3">
+            <p className="text-xs uppercase tracking-[0.14em] text-footer-foreground/50 font-mono mb-3">
               {col.heading}
             </p>
             <ul className="space-y-2">

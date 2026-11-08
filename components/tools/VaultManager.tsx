@@ -261,7 +261,7 @@ export function VaultManager() {
       </div>
 
       <div className="rounded-lg border border-border bg-muted/40 p-4 flex items-center gap-2">
-        <CheckCircle2 className="h-4 w-4 shrink-0 text-brand" />
+        <CheckCircle2 className="h-4 w-4 shrink-0 text-safe" />
         <p className="text-sm">Telegram alerts are on. Saved codes are checked hourly.</p>
       </div>
 

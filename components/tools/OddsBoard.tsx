@@ -70,7 +70,7 @@ export function OddsBoard() {
             key={c.from}
             onClick={() => setDay(i)}
             className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-mono ${
-              i === day ? 'border-foreground bg-brand text-brand-foreground shadow-glow' : 'border-border'
+              i === day ? 'border-brand bg-brand text-brand-foreground shadow-glow' : 'border-border'
             }`}
           >
             {c.label}

@@ -9,7 +9,7 @@ import { PLATFORM_OPTIONS as PLATFORMS } from '@/lib/platformList';
 
 function ResultIcon({ selection }: { selection: NormalizedSelection }) {
   if (selection.isWinning === true) {
-    return <CheckCircle2 className="h-4 w-4 text-brand flex-shrink-0" />;
+    return <CheckCircle2 className="h-4 w-4 text-safe flex-shrink-0" />;
   }
   if (selection.isWinning === false) {
     return <XCircle className="h-4 w-4 text-risky flex-shrink-0" />;

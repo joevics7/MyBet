@@ -71,7 +71,7 @@ const config: Config = {
         medium: 'hsl(var(--medium) / <alpha-value>)',
         risky: 'hsl(var(--risky) / <alpha-value>)',
         gold: 'hsl(var(--gold) / <alpha-value>)',
-        violet: 'hsl(var(--violet) / <alpha-value>)',
+        accent2: 'hsl(var(--accent-2) / <alpha-value>)',
         footer: {
           DEFAULT: 'hsl(var(--footer) / <alpha-value>)',
           foreground: 'hsl(var(--footer-foreground) / <alpha-value>)',

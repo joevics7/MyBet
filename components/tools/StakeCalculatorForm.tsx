@@ -152,7 +152,7 @@ export function StakeCalculatorForm() {
               onClick={() => setKellyFraction(f.value)}
               className={`flex-1 h-9 rounded-lg text-xs font-semibold border transition-colors ${
                 kellyFraction === f.value
-                  ? 'bg-brand text-brand-foreground shadow-glow border-foreground'
+                  ? 'bg-brand text-brand-foreground shadow-glow border-brand'
                   : 'border-border hover:border-gold'
               }`}
             >
