@@ -13,7 +13,7 @@ import { fetchFamilyFeed, SPORTYBET } from '@/lib/odds/sportybetFeed';
 import type { FeedMatch } from '@/lib/odds/types';
 import { findFixtureByTeamNames } from '@/lib/services/teamMatcher';
 import { fetchMatchesByDateRange as fdFetchRange } from '@/lib/services/footballData';
-import { getStoredFixtures } from '@/lib/footballApi/store';
+import { getLiveFixtures, livePredictedIds } from '@/lib/footballApi/liveDay';
 import { scoreForMarket, type MarketSelector } from '@/lib/services/confidenceEngine';
 import { probabilitiesWithFallback } from './probabilities';
 import { loadTeamRegistry } from '@/lib/services/teamRegistry';
@@ -25,6 +25,8 @@ import { probabilityToScore } from '@/lib/services/poissonModel';
 import type { TeamRegistry } from '@/lib/services/teamNameMatch';
 import type { CandidateSelection } from '@/lib/services/predictorSelection';
 
+// Why the SportyBet set came back empty (shown in the predictor report instead of a vague 'feed unavailable')
+export const bookmakerNote = { text: '' };
 export const FIXTURE_WINDOW_DAYS = 0; // the predictor works on ONE date: today, or the date passed in
 // What we FETCH is unchanged from before (the feed/lists/tipster pages over today + 2 days): narrowing the request itself broke
 // the run (2026-11-04/05: no / 1 ticket). Only the games KEPT are limited to the one date (see onDate()).
@@ -39,7 +41,7 @@ function dayBounds(date: string): { from: number; to: number } {
   return { from: Math.max(Date.now(), Date.parse(`${date}T00:00:00Z`)), to: Date.parse(`${date}T23:59:59Z`) };
 }
 const onDate = (iso: string | null | undefined, date: string) => !!iso && iso.slice(0, 10) === date;
-export const MAX_GAMES_PER_RUN = 45; // analysed per set: the funnel (shortlist.ts) picks the 45 best-covered games of the day
+export const MAX_GAMES_PER_RUN = 150; // analysed per set. Every game of the day is analysed (was 45: the 13 leagues have far fewer than 150 a day)
 const CONCURRENCY = 4;
 const SCAN_BUDGET_MS = 25000; // both sets scan in parallel; leaves the rest of the 60s for analysis, saving and codes
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -146,10 +148,11 @@ async function fromBookmaker(started: number, date: string): Promise<Collected |
     feed = await fetchFamilyFeed(SPORTYBET, bounds.from, bounds.from + FETCH_AHEAD_DAYS * 86400000);
   } catch (err) {
     console.error('[predictor] SportyBet feed failed, using fallback:', err);
+    bookmakerNote.text = `SportyBet feed failed: ${err instanceof Error ? err.message : String(err)}`;
     return null;
   }
   const games = feed.filter((g) => onDate(g.kickoff, date) && !LOW_SIGNAL.test(`${g.home} ${g.away} ${g.league}`));
-  if (games.length === 0) return null;
+  if (games.length === 0) { bookmakerNote.text = `No SportyBet games on ${date} (${feed.length} in the feed before the date and low-signal filters)`; return null; }
 
   const stats: CollectStats = {
     mode: 'bookmaker', source: SPORTYBET.label, gamesAvailable: games.length, gamesScanned: 0,
@@ -214,6 +217,7 @@ async function fromBookmaker(started: number, date: string): Promise<Collected |
   }, started + SCAN_BUDGET_MS);
 
   stats.candidates = candidates.length;
+  if (candidates.length === 0) bookmakerNote.text = `${games.length} SportyBet games, none usable: ${stats.insufficientData} without enough form data, ${stats.notCovered} not matched to a fixture, ${stats.failed} errors. Last problem: ${providers.lastFormProblem ?? 'none'}`;
   return candidates.length > 0 ? { candidates, stats } : null;
 }
 
@@ -222,18 +226,32 @@ async function fromBookmaker(started: number, date: string): Promise<Collected |
 async function fromFixtures(started: number, date: string): Promise<Collected> {
   const dateFrom = date;
   const dateTo = new Date(Date.parse(`${date}T00:00:00Z`) + FETCH_AHEAD_DAYS * 86400000).toISOString().slice(0, 10);
-  // Both providers, in order: API-Football (wide coverage) first; football-data.org if it fails, is out of quota or returns nothing.
+  // The pool: football-data.org's fixtures (the 13 leagues, which have form history) PLUS any other league's game that has an
+  // API-Football prediction saved for it (the day's best 40). A game both have is kept once, from football-data.
   const providers = newProviderStats();
-  let useAf = false;
-  let fixtures: Awaited<ReturnType<typeof getStoredFixtures>> = [];
-  try {
-    fixtures = await getStoredFixtures(dateFrom, dateTo); // saved by the daily job: no request
-    useAf = fixtures.length > 0;
-  } catch (err) {
-    console.error('[predictor] saved fixtures unavailable, trying football-data.org:', err);
-  }
-  if (!useAf && providers.footballDataConfigured) fixtures = await fdFetchRange(dateFrom, dateTo);
   const registry: TeamRegistry | undefined = await loadTeamRegistry().catch(() => undefined);
+  let fdFixtures: Awaited<ReturnType<typeof fdFetchRange>> = [];
+  if (providers.footballDataConfigured) {
+    try { fdFixtures = await fdFetchRange(dateFrom, dateTo); } catch (err) { console.error('[predictor] football-data.org fixtures failed:', err); }
+  }
+  type Fx = (typeof fdFixtures)[number];
+  const providerOf = new Map<number, 'footballdata' | 'apifootball'>();
+  const fixtures: Fx[] = [];
+  for (const f of fdFixtures) { providerOf.set(f.id, 'footballdata'); fixtures.push(f); }
+  try {
+    const predicted = livePredictedIds(); // this run's API-Football predictions (held in memory)
+    if (predicted.size > 0) {
+      const withPrediction = (await getLiveFixtures(dateFrom, dateTo)).filter((f) => predicted.has(f.id));
+      for (const f of withPrediction) {
+        const inFd = await findFixtureByTeamNames(f.homeTeam.name, f.awayTeam.name, f.utcDate, registry, 'footballdata').catch(() => null);
+        if (inFd) continue; // football-data has it: use that (its history)
+        providerOf.set(f.id + 0.5, 'apifootball'); // distinct key space from football-data ids
+        fixtures.push({ ...f, id: f.id + 0.5 });
+      }
+    }
+  } catch (err) {
+    console.error('[predictor] API-Football predictions unavailable:', err);
+  }
   const sources = await loadSources(date);
   const upcoming = Array.from(new Map(fixtures.map((f) => [f.id, f])).values())
     .filter((f) => onDate(f.utcDate, date) && (f.status === 'SCHEDULED' || f.status === 'TIMED') && !LOW_SIGNAL.test(`${f.homeTeam.name} ${f.awayTeam.name} ${f.competition.name}`));
@@ -242,13 +260,13 @@ async function fromFixtures(started: number, date: string): Promise<Collected> {
   const scheduled = rankedFixtures.slice(0, MAX_GAMES_PER_RUN * 3).map((r) => r.game.f);
 
   const stats: CollectStats = {
-    mode: 'model', source: useAf ? 'saved API-Football fixtures' : 'football-data.org fixtures', gamesAvailable: scheduled.length,
+    mode: 'model', source: 'football-data.org fixtures + API-Football predictions', gamesAvailable: scheduled.length,
     gamesScanned: 0, notCovered: 0, insufficientData: 0, failed: 0, candidates: 0, budgetHit: false,
     note: 'Odds are model-implied (1 / probability), not bookmaker prices.',
     providers,
     funnel: { considered: upcoming.length, analysed: 0, withTipsterCoverage: rankedFixtures.filter((r) => r.sources > 0).length },
   };
-  providers.fixturesFrom[useAf ? 'apifootball' : 'footballdata'] = scheduled.length;
+  for (const f of scheduled) bump(providers.fixturesFrom, providerOf.get(f.id) ?? 'footballdata');
   const candidates: CandidateSelection[] = [];
 
   stats.budgetHit = await inPool(scheduled, async (f) => {
@@ -256,7 +274,7 @@ async function fromFixtures(started: number, date: string): Promise<Collected> {
     try {
       const res = await probabilitiesWithFallback(
         { home: f.homeTeam.name, away: f.awayTeam.name, kickoff: f.utcDate },
-        { provider: useAf ? 'apifootball' : 'footballdata', homeTeamId: f.homeTeam.id, awayTeamId: f.awayTeam.id },
+        { provider: providerOf.get(f.id) ?? 'footballdata', homeTeamId: f.homeTeam.id, awayTeamId: f.awayTeam.id, matchId: providerOf.get(f.id) === 'apifootball' ? Math.floor(f.id) : undefined },
         MODEL_LINES, registry,
       );
       if (!res.ok) {
@@ -276,8 +294,8 @@ async function fromFixtures(started: number, date: string): Promise<Collected> {
         const scored = blendedScore(base.probability, expectations, market);
         const modelOdds = safeOdds(scored.probability);
         candidates.push({
-          externalEventId: String(f.id),
-          gameKey: `${useAf ? 'apifootball' : 'footballdata'}:${f.id}`,
+          externalEventId: String(Math.floor(f.id)),
+          gameKey: `${providerOf.get(f.id) ?? 'footballdata'}:${Math.floor(f.id)}`,
           homeTeam: f.homeTeam.name,
           awayTeam: f.awayTeam.name,
           competition: f.competition.name,
@@ -312,4 +330,35 @@ export async function collectBookmakerCandidates(date?: string | null): Promise<
 // Model set: always built from fixtures, independent of the bookmaker feed.
 export async function collectModelCandidates(date?: string | null): Promise<Collected> {
   return fromFixtures(Date.now(), targetDate(date));
+}
+
+
+// Which API-Football games get a prediction request: SportyBet's games (so a booking code can be made) that the 13 leagues do NOT
+// cover, best tipster coverage first, up to 40. Needs this run's API-Football list to be loaded already (liveDay.ts).
+export async function pickApiFootballGames(date: string): Promise<number[]> {
+  const bounds = dayBounds(date);
+  let feed: Awaited<ReturnType<typeof fetchFamilyFeed>> = [];
+  try {
+    feed = await fetchFamilyFeed(SPORTYBET, bounds.from, bounds.to);
+  } catch (err) {
+    console.error('[predictor] SportyBet feed failed while choosing API-Football games:', err);
+    return [];
+  }
+  const games = feed.filter((g) => onDate(g.kickoff, date) && !LOW_SIGNAL.test(`${g.home} ${g.away} ${g.league}`));
+  const sources = await loadSources(date);
+  const registry: TeamRegistry | undefined = await loadTeamRegistry().catch(() => undefined);
+  const ranked = rankByCoverage(games, sources);
+  const ids: number[] = [];
+  for (const r of ranked) {
+    if (ids.length >= 40) break;
+    const g = r.game;
+    if (process.env.FOOTBALL_DATA_API_KEY) {
+      const inFd = await findFixtureByTeamNames(g.home, g.away, g.kickoff, registry, 'footballdata').catch(() => null);
+      if (inFd) continue; // a 13-league game: analysed from its own history, no request needed
+    }
+    const fx = await findFixtureByTeamNames(g.home, g.away, g.kickoff, registry, 'apifootball').catch(() => null);
+    if (!fx || (fx.status && fx.status !== 'SCHEDULED') || ids.includes(fx.matchId)) continue;
+    ids.push(fx.matchId);
+  }
+  return ids;
 }

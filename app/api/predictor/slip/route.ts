@@ -53,6 +53,10 @@ export async function POST(req: NextRequest) {
 
   const skipped: { game: string; reason: string }[] = [];
   const usable = rows.filter((r) => {
+    if (!r.external_event_id) {
+      skipped.push({ game: `${r.home_team} v ${r.away_team}`, reason: 'Not listed on the booking platforms' });
+      return false;
+    }
     if (r.kickoff_at && Date.parse(r.kickoff_at) <= Date.now()) {
       skipped.push({ game: `${r.home_team} v ${r.away_team}`, reason: 'Already started' });
       return false;

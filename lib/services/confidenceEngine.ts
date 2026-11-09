@@ -17,7 +17,8 @@
 // call, but /tools/decoder doesn't call it yet.
 
 import { fetchTeamRecentForm as fdForm } from './footballData';
-import { storedTeamForm as afForm } from '@/lib/footballApi/store'; // saved results only: never calls the API
+// API-Football keeps no form history any more: its games are priced from that run's predictions instead (see probabilities.ts)
+const afForm = async (_teamId: number, _limit?: number, _historyOnly?: boolean): Promise<TeamMatchResult[]> => [];
 import type { FixtureProvider } from './teamMatcher';
 import { findFixtureByTeamNames, type MatchedFixture } from './teamMatcher';
 import type { TeamRegistry } from './teamNameMatch';

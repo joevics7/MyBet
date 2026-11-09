@@ -1,8 +1,7 @@
-// API-Football (api-sports.io): THIN CLIENT. Nothing in the app imports this except lib/footballApi/jobs.ts, which is the
-// only code allowed to spend requests (the daily job and the score job, both capped by lib/footballApi/budget.ts).
-// Everything else reads what those jobs saved (lib/footballApi/store.ts). Docs: https://www.api-football.com/documentation-v3
+// API-Football (api-sports.io): thin client. Used only inside one predictor run (lib/footballApi/liveDay.ts) and when the
+// predictor history checks a finished game. Nothing from it is saved. Docs: https://www.api-football.com/documentation-v3
 //
-// Env: API_FOOTBALL_KEY. Plan: free = 100 requests/day.
+// Env: API_FOOTBALL_KEY.
 
 import type { FdMatch } from './footballData';
 
@@ -10,6 +9,11 @@ const BASE_URL = 'https://v3.football.api-sports.io';
 
 // A suspended account or an exhausted quota answers every call with an error: stop calling until it can work again.
 let blockedUntil = 0; // epoch ms
+let minuteLimit = 0;  // requests per minute the plan allows, learned from the response headers
+// Gap between requests that keeps us under the per-minute limit (the free plan allows about 10 a minute).
+export function requestGapMs(): number {
+  return minuteLimit > 0 ? Math.ceil(60000 / minuteLimit) + 150 : 6500;
+}
 const nextUtcMidnight = () => { const d = new Date(); d.setUTCHours(24, 0, 0, 0); return d.getTime(); };
 export function isApiFootballConfigured(): boolean {
   return !!process.env.API_FOOTBALL_KEY && Date.now() >= blockedUntil;
@@ -28,6 +32,8 @@ async function apiFetch<T = Json[]>(path: string): Promise<T> {
   }
   if (!res.ok) throw new Error(`API-Football request failed: ${res.status} ${(await res.text()).slice(0, 200)}`);
 
+  const perMinute = Number(res.headers.get('x-ratelimit-limit'));
+  if (Number.isFinite(perMinute) && perMinute > 0) minuteLimit = perMinute;
   const json = (await res.json()) as Json;
   const errs = json.errors;
   const hasErrors = Array.isArray(errs) ? errs.length > 0 : errs && Object.keys(errs).length > 0;
@@ -69,22 +75,8 @@ export async function fetchFixturesForDate(date: string): Promise<FdMatch[]> {
   return rows.map(toMatch);
 }
 
-// ONE request to any path, returning the plan's answer instead of throwing (used only by the probe job).
-export async function probeApi(path: string): Promise<{ ok: boolean; results?: number; sample?: unknown; error?: string }> {
-  try {
-    const rows = await apiFetch<Json[]>(path);
-    return { ok: true, results: Array.isArray(rows) ? rows.length : undefined, sample: Array.isArray(rows) ? rows[0] : rows };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
-}
-
 // ONE request: API-Football's own prediction for one game (win/draw/loss %, advice, goals hint, last-5 form, h2h).
 export async function fetchPrediction(fixtureId: number): Promise<Json | null> {
   const rows = await apiFetch<Json[]>(`/predictions?fixture=${fixtureId}`);
   return rows?.[0] ?? null;
-}
-
-export function isRateLimited(): boolean {
-  return Date.now() < blockedUntil && blockedUntil - Date.now() <= 70e3;
 }

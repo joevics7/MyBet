@@ -20,7 +20,7 @@
 // that yet.
 
 import { fetchMatchesByDateRange as fdFetchRange, type FdMatch } from './footballData';
-import { getStoredFixtures } from '@/lib/footballApi/store';
+import { getLiveFixtures } from '@/lib/footballApi/liveDay';
 import { resolveTeam, teamSimilarity, type TeamRegistry } from './teamNameMatch';
 
 // Team IDs are NOT shared between providers, so a match always carries the
@@ -156,11 +156,12 @@ export async function findFixtureByTeamNames(
     return plain;
   };
 
-  // The saved API-Football day list first (filled by the daily/score jobs: reading it costs no request), then
-  // football-data.org (the 13-league API) for games the saved list doesn't have. Nothing here calls API-Football.
+  // football-data.org (the 13 leagues, which have form history) FIRST, then the saved API-Football day list (all leagues; filled
+  // by the daily/score jobs, reading it costs no request). The 13-league games must keep matching football-data so they keep
+  // using its history; only games it doesn't have fall through to the saved list. Nothing here calls API-Football.
   const providers: { name: FixtureProvider; fetchRange: typeof fdFetchRange }[] = [];
-  if (onlyProvider !== 'footballdata') providers.push({ name: 'apifootball', fetchRange: getStoredFixtures });
   if (process.env.FOOTBALL_DATA_API_KEY && onlyProvider !== 'apifootball') providers.push({ name: 'footballdata', fetchRange: fdFetchRange });
+  if (onlyProvider !== 'footballdata') providers.push({ name: 'apifootball', fetchRange: getLiveFixtures });
 
   for (const provider of providers) {
     let candidates: FdMatch[];

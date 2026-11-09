@@ -6,7 +6,7 @@
 // injectable so this logic can be tested without any network.
 
 import { computeMatchProbabilities, type MatchProbabilitiesData } from '@/lib/services/confidenceEngine';
-import { getStoredPrediction } from '@/lib/footballApi/store';
+import { getLivePrediction } from '@/lib/footballApi/liveDay';
 import { probabilitiesFromPrediction } from '@/lib/footballApi/predictionModel';
 import { findFixtureByTeamNames, type FixtureProvider, type MatchedFixture } from '@/lib/services/teamMatcher';
 import type { TeamRegistry } from '@/lib/services/teamNameMatch';
@@ -16,14 +16,14 @@ export interface ProbDeps {
   find: typeof findFixtureByTeamNames;
   configured: (p: FixtureProvider) => boolean;
   // Saved API-Football prediction for a fixture id (separate from the 13-league football-data form). Optional so tests can omit it.
-  prediction?: (fixtureId: number) => ReturnType<typeof getStoredPrediction>;
+  prediction?: (fixtureId: number) => ReturnType<typeof getLivePrediction>;
 }
 
 export const realDeps: ProbDeps = {
   compute: computeMatchProbabilities,
   find: findFixtureByTeamNames,
   configured: (p) => (p === 'apifootball' ? true : !!process.env.FOOTBALL_DATA_API_KEY), // API-Football = the saved list, no key needed to read it
-  prediction: getStoredPrediction,
+  prediction: getLivePrediction,
 };
 
 export type ProbResult =

@@ -17,7 +17,7 @@ export default async function Page() {
   if (supabase) {
     const { data } = await supabase
       .from('predictor_games')
-      .select('id,game_date,home_team,away_team,competition,kickoff_at,market,confidence,odds,result,final_score')
+      .select('id,game_date,home_team,away_team,competition,kickoff_at,market,confidence,odds,result,final_score,external_event_id')
       .gte('game_date', since)
       .order('confidence', { ascending: false });
     rows = (data as GameRow[] | null) ?? [];

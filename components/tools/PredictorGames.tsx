@@ -15,6 +15,7 @@ export interface GameRow {
   odds: number | string | null;
   result: 'pending' | 'won' | 'lost' | 'void';
   final_score: string | null;
+  external_event_id: string;
 }
 
 const PLATFORMS = [
@@ -73,7 +74,7 @@ export function PredictorGames({ todayDate, today, history }: { todayDate: strin
   const avgConf = chosen.length ? chosen.reduce((s, g) => s + Number(g.confidence), 0) / chosen.length : 0;
 
   const toggle = (g: GameRow) => {
-    if (started(g)) return;
+    if (started(g) || !g.external_event_id) return;
     setSlip(null);
     setPicked((prev) => {
       const next = new Set(prev);
@@ -121,7 +122,7 @@ export function PredictorGames({ todayDate, today, history }: { todayDate: strin
             {sorted.map((g) => {
               const c = Number(g.confidence);
               const isOn = picked.has(g.id);
-              const gone = started(g);
+              const gone = started(g) || !g.external_event_id;
               return (
                 <li key={g.id}>
                   <button onClick={() => toggle(g)} disabled={gone} className={`flex w-full items-start gap-3 p-3 text-left ${isOn ? 'bg-muted/60' : ''} ${gone ? 'opacity-50' : ''}`}>
@@ -130,7 +131,7 @@ export function PredictorGames({ todayDate, today, history }: { todayDate: strin
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-medium">{g.home_team} v {g.away_team}</span>
-                      <span className="block text-xs text-muted-foreground">{time(g.kickoff_at)}{g.competition ? ` · ${g.competition}` : ''}{gone ? ' · started' : ''}</span>
+                      <span className="block text-xs text-muted-foreground">{time(g.kickoff_at)}{g.competition ? ` · ${g.competition}` : ''}{started(g) ? ' · started' : !g.external_event_id ? ' · not bookable' : ''}</span>
                       <span className="mt-1 block text-sm">{g.market}{g.odds ? <span className="font-mono text-muted-foreground"> · {Number(g.odds).toFixed(2)}</span> : null}</span>
                     </span>
                     <span className={`shrink-0 rounded-lg border px-2 py-0.5 text-xs ${levelClass(c)}`}>{level(c)} {Math.round(c)}</span>

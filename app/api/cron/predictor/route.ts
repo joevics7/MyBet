@@ -27,13 +27,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
 import { generateReason } from '@/lib/services/gemini';
 import { generateDailyTickets, type CandidateSelection, type GeneratedTicket } from '@/lib/services/predictorSelection';
-import { collectBookmakerCandidates, collectModelCandidates, targetDate } from '@/lib/predictor/candidates';
+import { collectBookmakerCandidates, collectModelCandidates, targetDate, bookmakerNote, pickApiFootballGames } from '@/lib/predictor/candidates';
+import { loadApiFootballDay } from '@/lib/footballApi/liveDay';
 import { saveAnalysedGames } from '@/lib/predictor/games';
 import { attachBookingCodes } from '@/lib/predictor/codes';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60; // this job does real work; use the full serverless budget
+export const maxDuration = 300; // up to 40 paced API-Football requests (about 6.5 s apart on the free plan) + the analysis
 
 function isAuthorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
@@ -118,9 +119,10 @@ async function runPredictorJob(dateParam?: string | null): Promise<NextResponse>
   // ONE date only: today, or ?date=YYYY-MM-DD. Games from other dates are not fetched or analysed.
   const ticketDate = targetDate(dateParam);
 
-  // 0) (retired) The predictor no longer fills any history from the API: the daily football job saves the day's list and
-  // the best 40 games' team form, and this run only reads them.
-  const formHistory: unknown = null;
+  // 0) API-Football, held in memory for this run only (nothing saved): 1 request for the day's list, then the best 40 games'
+  // predictions. Stops asking after 230 s so the run still finishes and saves its tickets.
+  const apiFootball = await loadApiFootballDay(ticketDate, () => pickApiFootballGames(ticketDate), startedAt + 230_000).catch((err) => ({ error: String(err) }));
+  const formHistory: unknown = apiFootball;
 
   // 1) Collect both sets in parallel (independent feeds, independent budgets).
   let bookmaker, model;
@@ -150,7 +152,7 @@ async function runPredictorJob(dateParam?: string | null): Promise<NextResponse>
   const all = [...bookmakerTickets, ...modelTickets];
 
   // The day's analysed games (best bet each, top 40) for the all-games page and the 3-day history.
-  const gamesSaved = bookmaker ? await saveAnalysedGames(ticketDate, bookmaker.candidates).catch((e) => ({ saved: 0, error: String(e) })) : { saved: 0 };
+  const gamesSaved = bookmaker || model ? await saveAnalysedGames(ticketDate, [...(bookmaker?.candidates ?? []), ...(model?.candidates ?? [])]).catch((e) => ({ saved: 0, error: String(e) })) : { saved: 0 };
   console.log('[predictor cron] analysed games saved:', JSON.stringify(gamesSaved));
 
   const analysisStartedAt = Date.now();
@@ -225,8 +227,8 @@ async function runPredictorJob(dateParam?: string | null): Promise<NextResponse>
 
   return NextResponse.json({
     ticketDate,
-    formHistory,
-    bookmakerSet: { ...(bookmaker?.stats ?? { note: 'SportyBet feed unavailable' }), tickets: bookmakerTickets.length },
+    apiFootball: formHistory,
+    bookmakerSet: { ...(bookmaker?.stats ?? { note: bookmakerNote.text || 'SportyBet set empty' }), tickets: bookmakerTickets.length },
     modelSet: { ...(model?.stats ?? { note: 'Fixture scan failed' }), tickets: modelTickets.length },
     ticketsSaved: saved.length,
     bookingCodesCreated: codesCreated,
